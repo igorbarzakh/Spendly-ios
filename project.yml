@@ -13,6 +13,10 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 1.0.0
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    exactVersion: 9.2.0
 targets:
   Spendly:
     type: application
@@ -23,14 +27,33 @@ targets:
       Development: ios/Spendly/Resources/Development.xcconfig
       Staging: ios/Spendly/Resources/Staging.xcconfig
       Production: ios/Spendly/Resources/Production.xcconfig
+    dependencies:
+      - package: GoogleSignIn
+        products:
+          - GoogleSignIn
+          - GoogleSignInSwift
+    info:
+      path: ios/Spendly/Resources/Info.plist
+      properties:
+        SPENDLY_API_BASE_URL: $(SPENDLY_API_BASE_URL)
+        SPENDLY_GOOGLE_CLIENT_ID: $(SPENDLY_GOOGLE_CLIENT_ID)
+        SPENDLY_APPLE_CLIENT_ID: $(SPENDLY_APPLE_CLIENT_ID)
+        SPENDLY_CONFIGURATION: $(SPENDLY_CONFIGURATION)
+        GIDClientID: $(SPENDLY_GOOGLE_CLIENT_ID)
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - $(SPENDLY_GOOGLE_REVERSED_CLIENT_ID)
+        UILaunchScreen: {}
+    entitlements:
+      path: ios/Spendly/Resources/Spendly.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.spendly.ios
         PRODUCT_NAME: Spendly
-        INFOPLIST_KEY_SPENDLY_API_BASE_URL: $(SPENDLY_API_BASE_URL)
-        INFOPLIST_KEY_SPENDLY_GOOGLE_CLIENT_ID: $(SPENDLY_GOOGLE_CLIENT_ID)
-        INFOPLIST_KEY_SPENDLY_APPLE_CLIENT_ID: $(SPENDLY_APPLE_CLIENT_ID)
-        INFOPLIST_KEY_SPENDLY_CONFIGURATION: $(SPENDLY_CONFIGURATION)
   SpendlyTests:
     type: bundle.unit-test
     platform: iOS
