@@ -1,0 +1,14 @@
+.DS_Store
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.build/
+.swiftpm/
+Spendly.xcodeproj/
+
+# Local Supabase state and environment files
+supabase/.branches/
+supabase/.temp/
+.env
+.env.*
+!.env.example
