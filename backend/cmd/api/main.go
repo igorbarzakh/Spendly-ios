@@ -22,6 +22,19 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		url := os.Getenv("HEALTHCHECK_URL")
+		if url == "" {
+			url = "http://127.0.0.1:8080/health/live"
+		}
+		if err := probeHealth(ctx, url); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
+
 	logger := observability.NewLogger()
 	settings, err := config.Load()
 	if err != nil {
@@ -93,4 +106,20 @@ func main() {
 		logger.Error("HTTP server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+func probeHealth(ctx context.Context, url string) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return errors.New("health endpoint returned non-success status")
+	}
+	return nil
 }
