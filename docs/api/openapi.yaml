@@ -5,6 +5,35 @@ info:
 servers:
   - url: https://api.spendly.app
 paths:
+  /v1/groups:
+    get:
+      operationId: listGroups
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Groups } }
+    post:
+      operationId: createGroup
+      security: [{ bearerAuth: [] }]
+      responses: { '201': { description: Group created } }
+  /v1/groups/{id}:
+    patch:
+      operationId: archiveGroup
+      security: [{ bearerAuth: [] }]
+      responses: { '204': { description: Group archived } }
+  /v1/groups/{id}/members/{userID}:
+    patch:
+      operationId: updateGroupMember
+      security: [{ bearerAuth: [] }]
+      responses: { '204': { description: Member updated } }
+  /v1/groups/{id}/invitations:
+    post:
+      operationId: createGroupInvitation
+      security: [{ bearerAuth: [] }]
+      responses: { '201': { description: Invitation created } }
+  /v1/group-invitations/{token}/accept:
+    post:
+      operationId: acceptGroupInvitation
+      security: [{ bearerAuth: [] }]
+      responses: { '204': { description: Invitation accepted } }
   /v1/purchases:
     get:
       operationId: listPurchases

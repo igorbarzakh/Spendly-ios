@@ -22,10 +22,14 @@ type handlerConfig struct {
 	authService AuthUseCases
 	tokens      *auth.TokenManager
 	purchases   PurchaseUseCases
+	groups      GroupUseCases
 }
 
 func WithPurchases(service PurchaseUseCases) HandlerOption {
 	return func(config *handlerConfig) { config.purchases = service }
+}
+func WithGroups(service GroupUseCases) HandlerOption {
+	return func(config *handlerConfig) { config.groups = service }
 }
 
 type HandlerOption func(*handlerConfig)
@@ -61,6 +65,9 @@ func NewHandler(probe ReadinessProbe, options ...HandlerOption) http.Handler {
 	}
 	if config.purchases != nil && config.tokens != nil {
 		(&purchasesHandler{service: config.purchases}).register(mux, config.tokens)
+	}
+	if config.groups != nil && config.tokens != nil {
+		(&groupsHandler{service: config.groups}).register(mux, config.tokens)
 	}
 
 	return requestID(http.MaxBytesHandler(mux, maxRequestBodyBytes))
