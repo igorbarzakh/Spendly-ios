@@ -5,6 +5,46 @@ info:
 servers:
   - url: https://api.spendly.app
 paths:
+  /v1/purchases:
+    get:
+      operationId: listPurchases
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: group_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Purchases }
+        '401': { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createPurchase
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseDraft' }
+      responses:
+        '201': { description: Purchase created }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/purchases/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: If-Match, in: header, required: true, schema: { type: integer, format: int64 } }
+    put:
+      operationId: updatePurchase
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Purchase updated }
+        '409': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deletePurchase
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Purchase deleted }
+        '409': { $ref: '#/components/responses/Error' }
   /v1/auth/google:
     post:
       operationId: signInWithGoogle
@@ -79,6 +119,33 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    PurchaseDraft:
+      type: object
+      additionalProperties: false
+      required: [id, kind, merchant, currency_code, spent_at, local_date, time_zone]
+      properties:
+        id: { type: string, format: uuid }
+        group_id: { type: string, format: uuid }
+        kind: { type: string, enum: [quick, detailed] }
+        merchant: { type: string, minLength: 1 }
+        category: { type: string }
+        amount_minor: { type: integer, format: int64 }
+        currency_code: { type: string, pattern: '^[A-Z]{3}$' }
+        spent_at: { type: string, format: date-time }
+        local_date: { type: string, format: date }
+        time_zone: { type: string, minLength: 1 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PurchaseItem' }
+    PurchaseItem:
+      type: object
+      required: [id, position, name, category, amount_minor]
+      properties:
+        id: { type: string, format: uuid }
+        position: { type: integer, minimum: 0 }
+        name: { type: string, minLength: 1 }
+        category: { type: string, minLength: 1 }
+        amount_minor: { type: integer, format: int64, minimum: 1 }
     ProviderSignInRequest:
       type: object
       additionalProperties: false

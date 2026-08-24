@@ -21,7 +21,13 @@ type ReadinessProbe interface {
 type handlerConfig struct {
 	authService AuthUseCases
 	tokens      *auth.TokenManager
+	purchases   PurchaseUseCases
 }
+
+func WithPurchases(service PurchaseUseCases) HandlerOption {
+	return func(config *handlerConfig) { config.purchases = service }
+}
+
 type HandlerOption func(*handlerConfig)
 
 func WithAuth(service AuthUseCases, tokens *auth.TokenManager) HandlerOption {
@@ -52,6 +58,9 @@ func NewHandler(probe ReadinessProbe, options ...HandlerOption) http.Handler {
 	})
 	if config.authService != nil && config.tokens != nil {
 		(&authHandler{service: config.authService, tokens: config.tokens}).register(mux)
+	}
+	if config.purchases != nil && config.tokens != nil {
+		(&purchasesHandler{service: config.purchases}).register(mux, config.tokens)
 	}
 
 	return requestID(http.MaxBytesHandler(mux, maxRequestBodyBytes))

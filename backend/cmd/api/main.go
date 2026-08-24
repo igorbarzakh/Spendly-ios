@@ -14,6 +14,7 @@ import (
 	"github.com/igorbarzakh/spendly-ios/backend/internal/httpapi"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/observability"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres"
+	"github.com/igorbarzakh/spendly-ios/backend/internal/purchases"
 )
 
 func main() {
@@ -49,10 +50,11 @@ func main() {
 	}
 	sessionService := auth.NewSessionService(auth.NewSessionRepository(pool), tokenManager, 30*24*time.Hour, time.Now)
 	authService := auth.NewAuthService(verifiers, auth.NewIdentityRepository(pool), sessionService)
+	purchaseService := purchases.NewService(purchases.NewPostgresRepository(pool))
 
 	server := &http.Server{
 		Addr:              settings.HTTP.Address,
-		Handler:           httpapi.NewHandler(database, httpapi.WithAuth(authService, tokenManager)),
+		Handler:           httpapi.NewHandler(database, httpapi.WithAuth(authService, tokenManager), httpapi.WithPurchases(purchaseService)),
 		ReadHeaderTimeout: settings.HTTP.ReadHeaderTimeout,
 		ReadTimeout:       settings.HTTP.ReadTimeout,
 		WriteTimeout:      settings.HTTP.WriteTimeout,
