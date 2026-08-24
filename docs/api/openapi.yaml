@@ -74,6 +74,38 @@ paths:
       responses:
         '204': { description: Purchase deleted }
         '409': { $ref: '#/components/responses/Error' }
+  /v1/statistics:
+    get:
+      operationId: getStatistics
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: group_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Totals for the requested range and visibility scope
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Statistics' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /v1/sync:
+    get:
+      operationId: syncPurchases
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+        - { name: group_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Ordered purchase changes, including soft-delete tombstones
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
   /v1/auth/google:
     post:
       operationId: signInWithGoogle
@@ -148,6 +180,54 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Statistics:
+      type: object
+      required: [total_minor, by_day, by_category]
+      properties:
+        total_minor: { type: integer, format: int64 }
+        by_day:
+          type: object
+          additionalProperties: { type: integer, format: int64 }
+        by_category:
+          type: object
+          additionalProperties: { type: integer, format: int64 }
+    SyncPage:
+      type: object
+      required: [changes, next_cursor]
+      properties:
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/SyncChange' }
+        next_cursor: { type: string }
+    SyncChange:
+      type: object
+      required: [purchase, deleted]
+      properties:
+        purchase: { $ref: '#/components/schemas/Purchase' }
+        deleted: { type: boolean }
+    Purchase:
+      type: object
+      required: [id, kind, merchant, currency_code, spent_at, local_date, time_zone, owner_id, version, total_amount_minor, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        group_id: { type: string, format: uuid }
+        kind: { type: string, enum: [quick, detailed] }
+        merchant: { type: string }
+        category: { type: string }
+        amount_minor: { type: integer, format: int64 }
+        currency_code: { type: string }
+        spent_at: { type: string, format: date-time }
+        local_date: { type: string, format: date }
+        time_zone: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PurchaseItem' }
+        owner_id: { type: string, format: uuid }
+        version: { type: integer, format: int64 }
+        total_amount_minor: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time }
     PurchaseDraft:
       type: object
       additionalProperties: false

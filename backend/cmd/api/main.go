@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"os"
@@ -16,6 +17,8 @@ import (
 	"github.com/igorbarzakh/spendly-ios/backend/internal/observability"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/purchases"
+	"github.com/igorbarzakh/spendly-ios/backend/internal/statistics"
+	syncapi "github.com/igorbarzakh/spendly-ios/backend/internal/sync"
 )
 
 func main() {
@@ -53,10 +56,20 @@ func main() {
 	authService := auth.NewAuthService(verifiers, auth.NewIdentityRepository(pool), sessionService)
 	purchaseService := purchases.NewService(purchases.NewPostgresRepository(pool))
 	groupService := groups.NewService(groups.NewPostgresRepository(pool, time.Now))
+	statisticsService := statistics.NewService(statistics.NewPostgresRepository(pool))
+	cursorKey := sha256.Sum256([]byte("spendly-sync-cursor:" + settings.TokenSigningKey))
+	syncService := syncapi.NewService(syncapi.NewPostgresRepository(pool), cursorKey[:])
 
 	server := &http.Server{
-		Addr:              settings.HTTP.Address,
-		Handler:           httpapi.NewHandler(database, httpapi.WithAuth(authService, tokenManager), httpapi.WithPurchases(purchaseService), httpapi.WithGroups(groupService)),
+		Addr: settings.HTTP.Address,
+		Handler: httpapi.NewHandler(
+			database,
+			httpapi.WithAuth(authService, tokenManager),
+			httpapi.WithPurchases(purchaseService),
+			httpapi.WithGroups(groupService),
+			httpapi.WithStatistics(statisticsService),
+			httpapi.WithSync(syncService),
+		),
 		ReadHeaderTimeout: settings.HTTP.ReadHeaderTimeout,
 		ReadTimeout:       settings.HTTP.ReadTimeout,
 		WriteTimeout:      settings.HTTP.WriteTimeout,

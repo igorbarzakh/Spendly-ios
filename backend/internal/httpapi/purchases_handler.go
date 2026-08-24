@@ -42,10 +42,7 @@ func (h *purchasesHandler) list(w http.ResponseWriter, r *http.Request) {
 	claims, _ := accessClaims(r.Context())
 	from, e1 := time.Parse(time.RFC3339, r.URL.Query().Get("from"))
 	to, e2 := time.Parse(time.RFC3339, r.URL.Query().Get("to"))
-	var scope purchases.Scope
-	if group := r.URL.Query().Get("group_id"); group != "" {
-		scope.GroupID = &group
-	}
+	scope := purchaseScope(r)
 	if e1 != nil || e2 != nil {
 		writeAPIError(w, 400, "invalid_request", "Invalid request")
 		return
@@ -56,6 +53,14 @@ func (h *purchasesHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"purchases": values})
+}
+
+func purchaseScope(request *http.Request) purchases.Scope {
+	var scope purchases.Scope
+	if group := request.URL.Query().Get("group_id"); group != "" {
+		scope.GroupID = &group
+	}
+	return scope
 }
 func (h *purchasesHandler) update(w http.ResponseWriter, r *http.Request) {
 	claims, _ := accessClaims(r.Context())
