@@ -176,6 +176,7 @@ struct Purchase: Codable, Sendable, Hashable {
 }
 
 struct PurchaseDraft: Codable, Sendable, Hashable {
+    let id: PurchaseID
     let ownerID: UserID
     let groupID: GroupID?
     let merchant: String
@@ -184,4 +185,3 @@ struct PurchaseDraft: Codable, Sendable, Hashable {
     let timeZone: String
     let kind: Purchase.Kind
 }
-

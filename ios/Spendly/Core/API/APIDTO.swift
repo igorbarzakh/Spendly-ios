@@ -35,3 +35,86 @@ struct UserDTO: Decodable, Sendable {
 }
 
 struct EmptyResponseDTO: Decodable, Sendable {}
+
+struct PurchasesResponseDTO: Decodable, Sendable { let purchases: [PurchaseDTO] }
+struct GroupsResponseDTO: Decodable, Sendable { let groups: [GroupDTO] }
+
+struct PurchaseItemDTO: Codable, Sendable {
+    let id: UUID
+    let position: Int
+    let name: String
+    let category: String
+    let amountMinor: Int64
+    let createdAt: Date?
+    let updatedAt: Date?
+}
+
+struct PurchaseItemDraftDTO: Encodable, Sendable {
+    let id: UUID
+    let position: Int
+    let name: String
+    let category: String
+    let amountMinor: Int64
+}
+
+struct PurchaseDraftDTO: Encodable, Sendable {
+    let id: UUID
+    let groupId: UUID?
+    let kind: String
+    let merchant: String
+    let category: String?
+    let amountMinor: Int64?
+    let currencyCode: String
+    let spentAt: Date
+    let localDate: String
+    let timeZone: String
+    let items: [PurchaseItemDraftDTO]
+}
+
+struct PurchaseDTO: Codable, Sendable {
+    let id: UUID
+    let groupId: UUID?
+    let kind: String
+    let merchant: String
+    let category: String?
+    let amountMinor: Int64?
+    let currencyCode: String
+    let spentAt: Date
+    let localDate: String
+    let timeZone: String
+    let items: [PurchaseItemDTO]
+    let ownerId: UUID?
+    let version: Int64?
+    let totalAmountMinor: Int64?
+    let createdAt: Date?
+    let updatedAt: Date?
+    let deletedAt: Date?
+}
+
+struct GroupDTO: Decodable, Sendable {
+    let id: UUID
+    let name: String
+    let ownerId: UUID
+    let archivedAt: Date?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct CreateGroupDTO: Encodable, Sendable { let id: UUID; let name: String }
+struct ArchiveGroupDTO: Encodable, Sendable { let archived: Bool }
+
+struct StatisticsDTO: Decodable, Sendable {
+    let totalMinor: Int64
+    let byDay: [String: Int64]
+    let byCategory: [String: Int64]
+}
+
+struct SyncPageDTO: Decodable, Sendable {
+    let changes: [SyncChangeDTO]
+    let nextCursor: String
+}
+
+struct SyncChangeDTO: Decodable, Sendable {
+    let purchase: PurchaseDTO
+    let deleted: Bool
+}

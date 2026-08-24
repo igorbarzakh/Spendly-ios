@@ -19,5 +19,6 @@ protocol SessionRepository: Sendable {
     func currentSession() async throws -> UserSession?
     func signIn(with credential: ProviderCredential) async throws -> UserSession
     func accessToken() async throws -> String?
+    func refreshAccessToken() async throws -> String?
     func signOut() async throws
 }

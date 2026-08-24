@@ -11,6 +11,28 @@ struct AppEnvironment: Sendable {
         case insecureTransport
         case invalidAPIHost
         case missingOAuthClientID
+        case missingConfiguration
+    }
+
+    static func load(bundle: Bundle = .main) throws -> AppEnvironment {
+        func value(_ key: String) throws -> String {
+            guard let value = bundle.object(forInfoDictionaryKey: key) as? String,
+                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ValidationError.missingConfiguration
+            }
+            return value
+        }
+        guard let url = URL(string: try value("SPENDLY_API_BASE_URL")),
+              let configuration = Configuration(rawValue: try value("SPENDLY_CONFIGURATION")) else {
+            throw ValidationError.missingConfiguration
+        }
+        return try AppEnvironment(
+            apiBaseURL: url,
+            googleOAuthClientID: value("SPENDLY_GOOGLE_CLIENT_ID"),
+            googleServerClientID: value("SPENDLY_GOOGLE_SERVER_CLIENT_ID"),
+            appleOAuthClientID: value("SPENDLY_APPLE_CLIENT_ID"),
+            configuration: configuration
+        )
     }
 
     let apiBaseURL: URL

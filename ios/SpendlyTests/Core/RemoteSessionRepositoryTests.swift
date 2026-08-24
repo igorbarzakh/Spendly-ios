@@ -87,6 +87,23 @@ final class RemoteSessionRepositoryTests: XCTestCase {
         XCTAssertEqual(requestCount, 1)
     }
 
+    func testForcedRefreshRotatesAnOtherwiseUnexpiredAccessToken() async throws {
+        let storedSession = makeStoredSession(accessExpiresAt: now.addingTimeInterval(600))
+        let store = MemorySessionStore(session: storedSession)
+        let transport = AuthTransport(responses: [
+            .json(statusCode: 200, body: refreshedSessionJSON)
+        ])
+        let repository = makeRepository(transport: transport, store: store)
+
+        let token = try await repository.refreshAccessToken()
+
+        XCTAssertEqual(token, "access-2")
+        let requestCount = await transport.requestCount()
+        let refreshedSession = try await store.load()
+        XCTAssertEqual(requestCount, 1)
+        XCTAssertEqual(refreshedSession?.refreshToken, "refresh-2")
+    }
+
     func testRejectedRefreshDeletesUnusableLocalSession() async throws {
         let store = MemorySessionStore(
             session: makeStoredSession(accessExpiresAt: now.addingTimeInterval(-1))

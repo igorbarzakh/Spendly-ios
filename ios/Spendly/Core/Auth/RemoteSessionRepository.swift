@@ -58,6 +58,14 @@ actor RemoteSessionRepository: SessionRepository {
         return try await store.load()?.accessToken
     }
 
+    func refreshAccessToken() async throws -> String? {
+        guard let session = try await store.load(), session.refreshExpiresAt > now() else {
+            try await store.delete()
+            return nil
+        }
+        return try await refreshSingleFlight(session).accessToken
+    }
+
     func signOut() async throws {
         guard let session = try await store.load() else {
             return

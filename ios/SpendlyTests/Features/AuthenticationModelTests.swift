@@ -91,6 +91,7 @@ private actor AuthenticationRepositoryStub: SessionRepository {
     }
 
     func accessToken() async throws -> String? { nil }
+    func refreshAccessToken() async throws -> String? { nil }
 
     func signOut() async throws {}
 

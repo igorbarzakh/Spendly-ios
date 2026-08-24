@@ -86,6 +86,39 @@ struct APIEndpoint<Response: Decodable & Sendable>: Sendable {
             requiresAuthorization: requiresAuthorization
         )
     }
+
+    static func request<Body: Encodable & Sendable>(
+        _ path: String,
+        method: HTTPMethod,
+        body: Body,
+        requiresAuthorization: Bool = false,
+        headers: [String: String] = [:]
+    ) throws -> Self {
+        Self(
+            path: path,
+            method: method,
+            queryItems: [],
+            headers: headers,
+            body: try APIClient.makeEncoder().encode(body),
+            requiresAuthorization: requiresAuthorization
+        )
+    }
+
+    static func request(
+        _ path: String,
+        method: HTTPMethod,
+        requiresAuthorization: Bool = false,
+        headers: [String: String] = [:]
+    ) -> Self {
+        Self(
+            path: path,
+            method: method,
+            queryItems: [],
+            headers: headers,
+            body: nil,
+            requiresAuthorization: requiresAuthorization
+        )
+    }
 }
 
 actor APIClient {
