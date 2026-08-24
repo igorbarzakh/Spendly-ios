@@ -7,10 +7,12 @@ final class GoogleSignInCoordinator: AuthenticationCoordinator {
     let provider: AuthenticationProvider = .google
 
     private let clientID: String
+    private let serverClientID: String
     private let presentingViewController: @MainActor @Sendable () -> UIViewController?
 
     init(
         clientID: String,
+        serverClientID: String,
         presentingViewController: @escaping @MainActor @Sendable () -> UIViewController? = {
             let window = UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
@@ -20,11 +22,12 @@ final class GoogleSignInCoordinator: AuthenticationCoordinator {
         }
     ) {
         self.clientID = clientID
+        self.serverClientID = serverClientID
         self.presentingViewController = presentingViewController
     }
 
     func credential() async throws -> ProviderCredential {
-        guard !clientID.isEmpty else {
+        guard !clientID.isEmpty, !serverClientID.isEmpty else {
             throw AuthenticationProviderError.providerFailure
         }
         guard let viewController = presentingViewController() else {
@@ -32,7 +35,10 @@ final class GoogleSignInCoordinator: AuthenticationCoordinator {
         }
 
         let nonce = try AppleNonce.generate()
-        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = Self.makeConfiguration(
+            clientID: clientID,
+            serverClientID: serverClientID
+        )
 
         return try await withCheckedThrowingContinuation { continuation in
             GIDSignIn.sharedInstance.signIn(
@@ -63,5 +69,12 @@ final class GoogleSignInCoordinator: AuthenticationCoordinator {
                 )
             }
         }
+    }
+
+    nonisolated static func makeConfiguration(
+        clientID: String,
+        serverClientID: String
+    ) -> GIDConfiguration {
+        GIDConfiguration(clientID: clientID, serverClientID: serverClientID)
     }
 }

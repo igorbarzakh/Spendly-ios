@@ -31,6 +31,8 @@
 	<string>1</string>
 	<key>GIDClientID</key>
 	<string>$(SPENDLY_GOOGLE_CLIENT_ID)</string>
+	<key>GIDServerClientID</key>
+	<string>$(SPENDLY_GOOGLE_SERVER_CLIENT_ID)</string>
 	<key>SPENDLY_API_BASE_URL</key>
 	<string>$(SPENDLY_API_BASE_URL)</string>
 	<key>SPENDLY_APPLE_CLIENT_ID</key>
@@ -39,6 +41,8 @@
 	<string>$(SPENDLY_CONFIGURATION)</string>
 	<key>SPENDLY_GOOGLE_CLIENT_ID</key>
 	<string>$(SPENDLY_GOOGLE_CLIENT_ID)</string>
+	<key>SPENDLY_GOOGLE_SERVER_CLIENT_ID</key>
+	<string>$(SPENDLY_GOOGLE_SERVER_CLIENT_ID)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

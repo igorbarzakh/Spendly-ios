@@ -15,12 +15,14 @@ struct AppEnvironment: Sendable {
 
     let apiBaseURL: URL
     let googleOAuthClientID: String
+    let googleServerClientID: String
     let appleOAuthClientID: String
     let configuration: Configuration
 
     init(
         apiBaseURL: URL,
         googleOAuthClientID: String,
+        googleServerClientID: String,
         appleOAuthClientID: String,
         configuration: Configuration
     ) throws {
@@ -36,6 +38,7 @@ struct AppEnvironment: Sendable {
         }
 
         guard !googleOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !googleServerClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !appleOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             throw ValidationError.missingOAuthClientID
@@ -43,6 +46,7 @@ struct AppEnvironment: Sendable {
 
         self.apiBaseURL = apiBaseURL
         self.googleOAuthClientID = googleOAuthClientID
+        self.googleServerClientID = googleServerClientID
         self.appleOAuthClientID = appleOAuthClientID
         self.configuration = configuration
     }

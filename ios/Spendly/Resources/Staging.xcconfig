@@ -1,6 +1,7 @@
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) STAGING
 SPENDLY_CONFIGURATION = staging
 SPENDLY_API_BASE_URL = https:/$()/staging-api.spendly.app
-SPENDLY_GOOGLE_CLIENT_ID =
-SPENDLY_GOOGLE_REVERSED_CLIENT_ID =
+SPENDLY_GOOGLE_CLIENT_ID = 298809492431-ucautnjk9k4r5kk844235aa7pf5dphsv.apps.googleusercontent.com
+SPENDLY_GOOGLE_SERVER_CLIENT_ID = 298809492431-t6pi2e7j0ljfaenuip6c4q549q9h1qg8.apps.googleusercontent.com
+SPENDLY_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.298809492431-ucautnjk9k4r5kk844235aa7pf5dphsv
 SPENDLY_APPLE_CLIENT_ID = app.spendly.ios
