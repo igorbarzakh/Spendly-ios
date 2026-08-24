@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: spendly_test
+      POSTGRES_USER: spendly
+      POSTGRES_PASSWORD: spendly
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spendly -d spendly_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    tmpfs:
+      - /var/lib/postgresql
