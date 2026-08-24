@@ -12,6 +12,7 @@ import (
 	"github.com/igorbarzakh/spendly-ios/backend/internal/config"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/httpapi"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/observability"
+	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres"
 )
 
 func main() {
@@ -21,10 +22,17 @@ func main() {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
+	pool, err := postgres.NewPool(context.Background(), settings.DatabaseURL)
+	if err != nil {
+		logger.Error("database connection failed", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	database := postgres.NewDB(pool)
 
 	server := &http.Server{
 		Addr:              settings.HTTP.Address,
-		Handler:           httpapi.NewHandler(nil),
+		Handler:           httpapi.NewHandler(database),
 		ReadHeaderTimeout: settings.HTTP.ReadHeaderTimeout,
 		ReadTimeout:       settings.HTTP.ReadTimeout,
 		WriteTimeout:      settings.HTTP.WriteTimeout,

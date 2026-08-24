@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 const maxRequestBodyBytes = 1 << 20
+const readinessTimeout = 2 * time.Second
 
 type ReadinessProbe interface {
 	Ping(context.Context) error
@@ -20,7 +22,13 @@ func NewHandler(probe ReadinessProbe) http.Handler {
 		writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /health/ready", func(response http.ResponseWriter, request *http.Request) {
-		if probe == nil || probe.Ping(request.Context()) != nil {
+		if probe == nil {
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(request.Context(), readinessTimeout)
+		defer cancel()
+		if probe.Ping(ctx) != nil {
 			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
 			return
 		}

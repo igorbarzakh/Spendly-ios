@@ -60,6 +60,25 @@ func TestReadinessDoesNotExposeDatabaseError(t *testing.T) {
 	}
 }
 
+func TestReadinessBoundsDatabasePing(t *testing.T) {
+	var hasDeadline bool
+	probe := readinessProbeFunc(func(ctx context.Context) error {
+		_, hasDeadline = ctx.Deadline()
+		return nil
+	})
+	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	response := httptest.NewRecorder()
+
+	NewHandler(probe).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", response.Code)
+	}
+	if !hasDeadline {
+		t.Fatal("expected database readiness probe to have a deadline")
+	}
+}
+
 func TestRequestIDIsReturned(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health/live", nil)
 	request.Header.Set("X-Request-ID", "request-123")
