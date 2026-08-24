@@ -1,0 +1,84 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - codex/**
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27.0"
+  POSTGRES_IMAGE: "postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f"
+  TEST_DATABASE_URL: "postgres://spendly:spendly@localhost:5432/spendly_test?sslmode=disable"
+
+jobs:
+  test:
+    name: Test Go API
+    runs-on: ubuntu-26.04
+    services:
+      postgres:
+        image: postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f
+        env:
+          POSTGRES_DB: spendly_test
+          POSTGRES_USER: spendly
+          POSTGRES_PASSWORD: spendly
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U spendly -d spendly_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+
+      - name: Verify gofmt
+        working-directory: backend
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        working-directory: backend
+        run: go vet ./...
+
+      - name: Test with race detector
+        working-directory: backend
+        run: go test -race ./...
+
+      - name: Migration integration tests
+        working-directory: backend
+        run: go test -race ./internal/postgres -v
+
+      - name: Build API image
+        run: docker build --target api -t spendly-api:ci backend
+
+      - name: Build migrate image
+        run: docker build --target migrate -t spendly-migrate:ci backend
+
+      - name: Compose config
+        run: |
+          cp deploy/.env.example deploy/.env
+          docker compose --env-file deploy/.env -f deploy/compose.yaml config --quiet
+
+      - name: Compose smoke test
+        run: |
+          cp deploy/.env.example deploy/.env
+          token_key="$(openssl rand -base64 64 | tr -d '=\n')"
+          TOKEN_SIGNING_KEY="$token_key" perl -0pi -e 's/^SPENDLY_DOMAIN=.*/SPENDLY_DOMAIN=localhost/m; s/^HTTP_PORT=.*/HTTP_PORT=18080/m; s/^HTTPS_PORT=.*/HTTPS_PORT=18443/m; s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=spendly/m; s#^DATABASE_URL=.*#DATABASE_URL=postgres://spendly:spendly\@postgres:5432/spendly?sslmode=disable#m; s/^TOKEN_SIGNING_KEY=.*/TOKEN_SIGNING_KEY=$ENV{TOKEN_SIGNING_KEY}/m' deploy/.env
+          trap 'docker compose --env-file deploy/.env -f deploy/compose.yaml down -v --remove-orphans' EXIT
+          docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build postgres
+          docker compose --env-file deploy/.env -f deploy/compose.yaml run --rm migrate up
+          docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build api caddy
+          SPENDLY_SMOKE_INSECURE=1 deploy/tests/smoke.sh

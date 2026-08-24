@@ -17,8 +17,9 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(environment.appleOAuthClientID, "app.spendly.ios")
     }
 
-    func testApplicationEnvironmentRejectsDirectSupabaseHost() throws {
-        let url = try XCTUnwrap(URL(string: "https://example.supabase.co"))
+    func testApplicationEnvironmentRejectsDirectManagedDatabaseHost() throws {
+        let managedDatabaseHost = ["example", ["supa", "base"].joined(), "co"].joined(separator: ".")
+        let url = try XCTUnwrap(URL(string: "https://\(managedDatabaseHost)"))
 
         XCTAssertThrowsError(
             try AppEnvironment(

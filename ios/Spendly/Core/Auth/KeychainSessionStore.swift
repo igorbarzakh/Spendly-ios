@@ -24,10 +24,16 @@ enum KeychainSessionStoreError: Error, Equatable {
 actor KeychainSessionStore: SessionStore {
     private let service: String
     private let account: String
+    private let usesDataProtectionKeychain: Bool
 
-    init(service: String = "app.spendly.ios.session", account: String = "current") {
+    init(
+        service: String = "app.spendly.ios.session",
+        account: String = "current",
+        usesDataProtectionKeychain: Bool = true
+    ) {
         self.service = service
         self.account = account
+        self.usesDataProtectionKeychain = usesDataProtectionKeychain
     }
 
     func load() throws -> StoredSession? {
@@ -84,12 +90,15 @@ actor KeychainSessionStore: SessionStore {
     }
 
     private var baseQuery: [String: Any] {
-        [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrSynchronizable as String: false,
-            kSecUseDataProtectionKeychain as String: true
+            kSecAttrSynchronizable as String: false
         ]
+        if usesDataProtectionKeychain {
+            query[kSecUseDataProtectionKeychain as String] = true
+        }
+        return query
     }
 }

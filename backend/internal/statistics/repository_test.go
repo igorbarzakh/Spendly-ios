@@ -4,10 +4,10 @@ import (
 	"context"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/auth"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres"
+	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres/testutil"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/purchases"
 	"github.com/igorbarzakh/spendly-ios/backend/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"os"
 	"testing"
 	"time"
 )
@@ -80,22 +80,11 @@ func statsQuick(id string, amount int64, category string) purchases.Draft {
 }
 func statsDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	u := os.Getenv("TEST_DATABASE_URL")
-	if u == "" {
-		t.Skip("TEST_DATABASE_URL missing")
+	pool := testutil.EmptyPool(t)
+	if err := postgres.Up(context.Background(), pool, migrations.Files); err != nil {
+		t.Fatal(err)
 	}
-	p, e := pgxpool.New(context.Background(), u)
-	if e != nil {
-		t.Fatal(e)
-	}
-	t.Cleanup(p.Close)
-	if _, e = p.Exec(context.Background(), "drop schema if exists public cascade;create schema public"); e != nil {
-		t.Fatal(e)
-	}
-	if e = postgres.Up(context.Background(), p, migrations.Files); e != nil {
-		t.Fatal(e)
-	}
-	return p
+	return pool
 }
 func insertStatsUser(t *testing.T, p *pgxpool.Pool, u auth.UserID) {
 	if _, e := p.Exec(context.Background(), "insert into users(id)values($1)", u); e != nil {

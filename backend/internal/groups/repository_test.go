@@ -5,9 +5,9 @@ import (
 	"errors"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/auth"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres"
+	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres/testutil"
 	"github.com/igorbarzakh/spendly-ios/backend/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"os"
 	"testing"
 	"time"
 )
@@ -93,19 +93,8 @@ func TestOnlyOwnerCanManageMembers(t *testing.T) {
 
 func groupTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL missing")
-	}
-	pool, err := pgxpool.New(context.Background(), url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	if _, err = pool.Exec(context.Background(), "drop schema if exists public cascade;create schema public"); err != nil {
-		t.Fatal(err)
-	}
-	if err = postgres.Up(context.Background(), pool, migrations.Files); err != nil {
+	pool := testutil.EmptyPool(t)
+	if err := postgres.Up(context.Background(), pool, migrations.Files); err != nil {
 		t.Fatal(err)
 	}
 	return pool

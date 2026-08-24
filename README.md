@@ -1,12 +1,13 @@
 # Spendly
 
-Spendly is a production-oriented iOS 17+ application with a Supabase backend and a transport-only reverse proxy. This repository is the monorepo for the SwiftUI client, database migrations and policies, Edge Functions, proxy configuration, tests, and operational documentation.
+Spendly is a production-oriented iOS 17+ application backed by a self-hosted Go REST API and PostgreSQL. This repository is the monorepo for the SwiftUI client, Go backend, database migrations, Docker/Caddy deployment, tests, and operational documentation.
 
 ## Toolchain
 
 - Xcode 26.6 (build 17F113)
 - Apple Swift 6.3.3
-- Supabase CLI 2.115.0
+- Go 1.27.0
+- PostgreSQL 18.6
 - Docker 29.5.2
 - XcodeGen 2.46.0
 - iOS Simulator Runtime 26.5
@@ -23,5 +24,17 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 xcodegen generate
 ```
 
-No production credentials belong in this repository. Client traffic must use `https://api.spendly.app`; direct production access to Supabase project hosts is prohibited.
+## Backend checks
 
+```bash
+docker compose -f deploy/compose.test.yaml up -d postgres
+cd backend
+TEST_DATABASE_URL=postgres://spendly:spendly@localhost:55432/spendly_test?sslmode=disable go test -race ./...
+go vet ./...
+```
+
+## Deployment
+
+Production runs on one Compose host: Caddy terminates TLS on `80/443`, the Go API listens only on the internal Docker network, and PostgreSQL is not published externally. See `docs/deployment.md` and `docs/backup-runbook.md`.
+
+No production credentials belong in this repository. Client traffic must use `https://api.spendly.app`; direct database access from iOS is prohibited.

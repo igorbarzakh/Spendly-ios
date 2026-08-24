@@ -1,10 +1,13 @@
 # Spendly data model
 
-PostgreSQL is the server source of truth. SwiftData will cache normalized responses and pending mutations, but it does not define financial or permission rules.
+PostgreSQL is the server source of truth behind the Spendly Go REST API. SwiftData caches normalized API responses and pending mutations on-device, but it does not define financial or permission rules.
 
 ## Identity and ownership
 
-- `profiles.id` is the authenticated `auth.users.id`.
+- `users.id` is the stable server user ID created on the first valid Google or Apple login.
+- `profiles.id` matches `users.id`.
+- `user_identities` stores one row per provider identity. Independent Apple and Google identities are not merged automatically.
+- `user_sessions` stores refresh-token hashes and session-family metadata for rotation and reuse detection.
 - `groups.owner_id` identifies the immutable owner for the first release.
 - Creating a group automatically creates exactly one `group_members` row with role `owner` and expense-management permission.
 - A grouped purchase has a composite foreign key to `(group_id, owner_id)` in `group_members`, so a purchase cannot be attributed to a non-member.
@@ -26,5 +29,4 @@ PostgreSQL is the server source of truth. SwiftData will cache normalized respon
 
 ## Access control
 
-This initial migration establishes relational invariants only. RLS, grants, and their positive and negative tests are introduced in the next migration so unsafe access can first be demonstrated and then closed explicitly.
-
+The Go API enforces permissions server-side before executing repository operations. The PostgreSQL schema keeps relational invariants such as ownership, membership, idempotency keys, valid purchase payloads, invitation token hashes, and optimistic `version` checks.

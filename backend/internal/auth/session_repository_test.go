@@ -3,11 +3,11 @@ package auth
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres"
+	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres/testutil"
 	"github.com/igorbarzakh/spendly-ios/backend/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -91,10 +91,7 @@ func TestLogoutAllRevokesEveryUserSession(t *testing.T) {
 
 func authTestDatabase(t *testing.T) (*pgxpool.Pool, UserID) {
 	t.Helper()
-	pool := sharedAuthTestPool(t)
-	if _, err := pool.Exec(context.Background(), "drop schema if exists public cascade; create schema public"); err != nil {
-		t.Fatalf("reset schema: %v", err)
-	}
+	pool := testutil.EmptyPool(t)
 	if err := postgres.Up(context.Background(), pool, migrations.Files); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
@@ -103,21 +100,4 @@ func authTestDatabase(t *testing.T) (*pgxpool.Pool, UserID) {
 		t.Fatalf("insert user: %v", err)
 	}
 	return pool, userID
-}
-
-func sharedAuthTestPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	pool, err := pgxpool.New(context.Background(), databaseURL)
-	if err != nil {
-		t.Fatalf("create pool: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	if err := pool.Ping(context.Background()); err != nil {
-		t.Fatalf("ping database: %v", err)
-	}
-	return pool
 }

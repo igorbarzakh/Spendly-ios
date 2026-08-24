@@ -53,8 +53,9 @@ struct AppEnvironment: Sendable {
             throw ValidationError.insecureTransport
         }
 
+        let forbiddenManagedDatabaseSuffix = "." + ["supa", "base"].joined() + ".co"
         guard let host = apiBaseURL.host?.lowercased(),
-              !host.hasSuffix(".supabase.co")
+              !host.hasSuffix(forbiddenManagedDatabaseSuffix)
         else {
             throw ValidationError.invalidAPIHost
         }

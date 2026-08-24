@@ -2,12 +2,12 @@ package sync
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/igorbarzakh/spendly-ios/backend/internal/auth"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres"
+	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres/testutil"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/purchases"
 	"github.com/igorbarzakh/spendly-ios/backend/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -81,19 +81,8 @@ func syncQuick(id string) purchases.Draft {
 
 func syncDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL missing")
-	}
-	pool, err := pgxpool.New(context.Background(), databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	if _, err = pool.Exec(context.Background(), "drop schema if exists public cascade; create schema public"); err != nil {
-		t.Fatal(err)
-	}
-	if err = postgres.Up(context.Background(), pool, migrations.Files); err != nil {
+	pool := testutil.EmptyPool(t)
+	if err := postgres.Up(context.Background(), pool, migrations.Files); err != nil {
 		t.Fatal(err)
 	}
 	return pool

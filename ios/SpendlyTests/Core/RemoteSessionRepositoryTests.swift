@@ -162,7 +162,8 @@ final class RemoteSessionRepositoryTests: XCTestCase {
     func testKeychainStoreReplacesTokenPairAsSingleRecord() async throws {
         let store = KeychainSessionStore(
             service: "app.spendly.ios.tests.\(UUID().uuidString)",
-            account: "session"
+            account: "session",
+            usesDataProtectionKeychain: false
         )
         let first = makeStoredSession(accessExpiresAt: now.addingTimeInterval(60))
         let second = StoredSession(

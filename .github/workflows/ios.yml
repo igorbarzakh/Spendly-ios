@@ -1,0 +1,52 @@
+name: iOS CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - codex/**
+
+permissions:
+  contents: read
+
+env:
+  XCODE_VERSION: "26.6"
+  XCODEGEN_VERSION: "2.46.0"
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  test:
+    name: Test SwiftUI app
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode
+        run: |
+          if [ ! -d "$DEVELOPER_DIR" ]; then
+            echo "Expected Xcode $XCODE_VERSION at $DEVELOPER_DIR"
+            exit 1
+          fi
+          sudo xcode-select --switch "$DEVELOPER_DIR"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          brew install mint
+          mint run yonaskolb/xcodegen@"$XCODEGEN_VERSION" xcodegen --version
+          test "$(mint run yonaskolb/xcodegen@"$XCODEGEN_VERSION" xcodegen --version)" = "Version: $XCODEGEN_VERSION"
+
+      - name: Generate project
+        run: mint run yonaskolb/xcodegen@"$XCODEGEN_VERSION" xcodegen generate
+
+      - name: Test
+        run: |
+          xcodebuild test \
+            -project Spendly.xcodeproj \
+            -scheme Spendly \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 17'
