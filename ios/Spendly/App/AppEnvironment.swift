@@ -1,17 +1,31 @@
 import Foundation
 
 struct AppEnvironment: Sendable {
+    enum Configuration: String, Sendable {
+        case development
+        case staging
+        case production
+    }
+
     enum ValidationError: Error, Equatable {
         case insecureTransport
         case invalidAPIHost
-        case missingPublishableKey
+        case missingOAuthClientID
     }
 
     let apiBaseURL: URL
-    let publishableKey: String
+    let googleOAuthClientID: String
+    let appleOAuthClientID: String
+    let configuration: Configuration
 
-    init(apiBaseURL: URL, publishableKey: String) throws {
-        guard apiBaseURL.scheme?.lowercased() == "https" else {
+    init(
+        apiBaseURL: URL,
+        googleOAuthClientID: String,
+        appleOAuthClientID: String,
+        configuration: Configuration
+    ) throws {
+        if configuration != .development,
+           apiBaseURL.scheme?.lowercased() != "https" {
             throw ValidationError.insecureTransport
         }
 
@@ -21,12 +35,15 @@ struct AppEnvironment: Sendable {
             throw ValidationError.invalidAPIHost
         }
 
-        guard !publishableKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ValidationError.missingPublishableKey
+        guard !googleOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !appleOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            throw ValidationError.missingOAuthClientID
         }
 
         self.apiBaseURL = apiBaseURL
-        self.publishableKey = publishableKey
+        self.googleOAuthClientID = googleOAuthClientID
+        self.appleOAuthClientID = appleOAuthClientID
+        self.configuration = configuration
     }
 }
-

@@ -2,20 +2,29 @@ import XCTest
 @testable import Spendly
 
 final class SmokeTests: XCTestCase {
-    func testApplicationEnvironmentUsesProxyURL() throws {
+    func testApplicationEnvironmentStoresRESTAndOAuthConfiguration() throws {
         let environment = try AppEnvironment(
             apiBaseURL: XCTUnwrap(URL(string: "https://api.spendly.app")),
-            publishableKey: "test-key"
+            googleOAuthClientID: "google-client-id",
+            appleOAuthClientID: "app.spendly.ios",
+            configuration: .production
         )
 
         XCTAssertEqual(environment.apiBaseURL.host, "api.spendly.app")
+        XCTAssertEqual(environment.googleOAuthClientID, "google-client-id")
+        XCTAssertEqual(environment.appleOAuthClientID, "app.spendly.ios")
     }
 
     func testApplicationEnvironmentRejectsDirectSupabaseHost() throws {
         let url = try XCTUnwrap(URL(string: "https://example.supabase.co"))
 
         XCTAssertThrowsError(
-            try AppEnvironment(apiBaseURL: url, publishableKey: "test-key")
+            try AppEnvironment(
+                apiBaseURL: url,
+                googleOAuthClientID: "google-client-id",
+                appleOAuthClientID: "app.spendly.ios",
+                configuration: .production
+            )
         )
     }
 
@@ -23,7 +32,23 @@ final class SmokeTests: XCTestCase {
         let url = try XCTUnwrap(URL(string: "http://api.spendly.app"))
 
         XCTAssertThrowsError(
-            try AppEnvironment(apiBaseURL: url, publishableKey: "test-key")
+            try AppEnvironment(
+                apiBaseURL: url,
+                googleOAuthClientID: "google-client-id",
+                appleOAuthClientID: "app.spendly.ios",
+                configuration: .production
+            )
         )
+    }
+
+    func testDevelopmentEnvironmentAllowsLocalHTTP() throws {
+        let environment = try AppEnvironment(
+            apiBaseURL: XCTUnwrap(URL(string: "http://localhost:8080")),
+            googleOAuthClientID: "google-client-id",
+            appleOAuthClientID: "app.spendly.ios",
+            configuration: .development
+        )
+
+        XCTAssertEqual(environment.apiBaseURL.port, 8080)
     }
 }

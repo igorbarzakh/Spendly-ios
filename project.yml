@@ -27,6 +27,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.spendly.ios
         PRODUCT_NAME: Spendly
+        INFOPLIST_KEY_SPENDLY_API_BASE_URL: $(SPENDLY_API_BASE_URL)
+        INFOPLIST_KEY_SPENDLY_GOOGLE_CLIENT_ID: $(SPENDLY_GOOGLE_CLIENT_ID)
+        INFOPLIST_KEY_SPENDLY_APPLE_CLIENT_ID: $(SPENDLY_APPLE_CLIENT_ID)
+        INFOPLIST_KEY_SPENDLY_CONFIGURATION: $(SPENDLY_CONFIGURATION)
   SpendlyTests:
     type: bundle.unit-test
     platform: iOS
@@ -56,4 +60,3 @@ schemes:
       config: Development
     archive:
       config: Production
-
