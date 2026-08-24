@@ -1,0 +1,133 @@
+openapi: 3.1.0
+info:
+  title: Spendly API
+  version: 1.0.0
+servers:
+  - url: https://api.spendly.app
+paths:
+  /v1/auth/google:
+    post:
+      operationId: signInWithGoogle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderSignInRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /v1/auth/apple:
+    post:
+      operationId: signInWithApple
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderSignInRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /v1/auth/refresh:
+    post:
+      operationId: refreshSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Error' }
+  /v1/auth/logout:
+    post:
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '204': { description: Session revoked }
+  /v1/auth/logout-all:
+    post:
+      operationId: logoutAll
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: All sessions revoked }
+        '401': { $ref: '#/components/responses/Error' }
+  /v1/me:
+    get:
+      operationId: getCurrentUser
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ProviderSignInRequest:
+      type: object
+      additionalProperties: false
+      required: [id_token, nonce]
+      properties:
+        id_token: { type: string, minLength: 1 }
+        nonce: { type: string, minLength: 1 }
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string, minLength: 1 }
+    User:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        currency_code: { type: string }
+        time_zone: { type: string }
+    Session:
+      type: object
+      required: [access_token, refresh_token, access_expires_at, refresh_expires_at]
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        access_token: { type: string }
+        refresh_token: { type: string }
+        access_expires_at: { type: string, format: date-time }
+        refresh_expires_at: { type: string, format: date-time }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
+  responses:
+    Session:
+      description: Spendly session
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Session' }
+    Error:
+      description: API error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

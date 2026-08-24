@@ -111,7 +111,7 @@ func HashRefreshToken(raw string) [32]byte {
 	return sha256.Sum256([]byte(raw))
 }
 
-func parseSigningKey(encoded string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
+func ParseSigningKey(encoded string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	raw, err := base64.RawStdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, nil, err

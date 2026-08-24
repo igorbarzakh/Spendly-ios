@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/igorbarzakh/spendly-ios/backend/internal/auth"
 )
 
 const maxRequestBodyBytes = 1 << 20
@@ -16,7 +18,21 @@ type ReadinessProbe interface {
 	Ping(context.Context) error
 }
 
-func NewHandler(probe ReadinessProbe) http.Handler {
+type handlerConfig struct {
+	authService AuthUseCases
+	tokens      *auth.TokenManager
+}
+type HandlerOption func(*handlerConfig)
+
+func WithAuth(service AuthUseCases, tokens *auth.TokenManager) HandlerOption {
+	return func(config *handlerConfig) { config.authService = service; config.tokens = tokens }
+}
+
+func NewHandler(probe ReadinessProbe, options ...HandlerOption) http.Handler {
+	var config handlerConfig
+	for _, option := range options {
+		option(&config)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(response http.ResponseWriter, _ *http.Request) {
 		writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
@@ -34,6 +50,9 @@ func NewHandler(probe ReadinessProbe) http.Handler {
 		}
 		writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	if config.authService != nil && config.tokens != nil {
+		(&authHandler{service: config.authService, tokens: config.tokens}).register(mux)
+	}
 
 	return requestID(http.MaxBytesHandler(mux, maxRequestBodyBytes))
 }
