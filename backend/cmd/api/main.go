@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -36,6 +37,7 @@ func main() {
 	}
 
 	logger := observability.NewLogger()
+	slog.SetDefault(logger)
 	settings, err := config.Load()
 	if err != nil {
 		logger.Error("invalid configuration", "error", err)

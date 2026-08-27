@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -34,51 +35,76 @@ func (handler *authHandler) register(mux *http.ServeMux) {
 
 func (handler *authHandler) signIn(provider auth.Provider) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
+		logger := slog.Default().With(
+			"request_id", response.Header().Get("X-Request-ID"),
+			"provider", provider,
+			"path", request.URL.Path,
+		)
 		var input struct {
 			IDToken string `json:"id_token"`
 			Nonce   string `json:"nonce"`
 		}
 		if err := decodeJSON(request, &input); err != nil || input.IDToken == "" || input.Nonce == "" {
+			logger.Warn("auth sign-in rejected", "reason", "invalid_request")
 			writeAPIError(response, 400, "invalid_request", "Invalid request")
 			return
 		}
+		logger.Info("auth sign-in started")
 		user, tokens, err := handler.service.SignIn(request.Context(), provider, input.IDToken, input.Nonce)
 		if err != nil {
+			logger.Error("auth sign-in failed", "error", err)
 			handleAuthError(response, err)
 			return
 		}
+		logger.Info("auth sign-in succeeded", "user_id", user.ID, "access_expires_at", tokens.AccessExpiresAt)
 		writeJSON(response, 200, sessionResponse(user, tokens))
 	}
 }
 
 func (handler *authHandler) refresh(response http.ResponseWriter, request *http.Request) {
+	logger := slog.Default().With(
+		"request_id", response.Header().Get("X-Request-ID"),
+		"path", request.URL.Path,
+	)
 	var input struct {
 		RefreshToken string `json:"refresh_token"`
 	}
 	if err := decodeJSON(request, &input); err != nil || input.RefreshToken == "" {
+		logger.Warn("auth refresh rejected", "reason", "invalid_request")
 		writeAPIError(response, 400, "invalid_request", "Invalid request")
 		return
 	}
+	logger.Info("auth refresh started")
 	tokens, err := handler.service.Refresh(request.Context(), input.RefreshToken)
 	if err != nil {
+		logger.Error("auth refresh failed", "error", err)
 		handleAuthError(response, err)
 		return
 	}
+	logger.Info("auth refresh succeeded", "access_expires_at", tokens.AccessExpiresAt)
 	writeJSON(response, 200, sessionResponse(auth.User{}, tokens))
 }
 
 func (handler *authHandler) logout(response http.ResponseWriter, request *http.Request) {
+	logger := slog.Default().With(
+		"request_id", response.Header().Get("X-Request-ID"),
+		"path", request.URL.Path,
+	)
 	var input struct {
 		RefreshToken string `json:"refresh_token"`
 	}
 	if err := decodeJSON(request, &input); err != nil || input.RefreshToken == "" {
+		logger.Warn("auth logout rejected", "reason", "invalid_request")
 		writeAPIError(response, 400, "invalid_request", "Invalid request")
 		return
 	}
+	logger.Info("auth logout started")
 	if err := handler.service.Logout(request.Context(), input.RefreshToken); err != nil {
+		logger.Error("auth logout failed", "error", err)
 		handleAuthError(response, err)
 		return
 	}
+	logger.Info("auth logout succeeded")
 	response.WriteHeader(http.StatusNoContent)
 }
 

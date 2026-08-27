@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +16,7 @@ import (
 )
 
 func TestGoogleSignInReturnsSpendlySession(t *testing.T) {
+	logs := captureTestLogs(t)
 	service := &authServiceStub{
 		signIn: func(_ context.Context, provider auth.Provider, idToken, nonce string) (auth.User, auth.SessionTokens, error) {
 			if provider != auth.ProviderGoogle || idToken != "provider-token" || nonce != "nonce" {
@@ -47,9 +50,13 @@ func TestGoogleSignInReturnsSpendlySession(t *testing.T) {
 	if payload.User.ID == "" || payload.AccessToken != "access" || payload.RefreshToken != "refresh" {
 		t.Fatalf("unexpected response: %+v", payload)
 	}
+	if !strings.Contains(logs.String(), `"msg":"auth sign-in succeeded"`) {
+		t.Fatalf("expected success auth log, got %s", logs.String())
+	}
 }
 
 func TestSignInMapsInvalidProviderTokenToUniformUnauthorized(t *testing.T) {
+	logs := captureTestLogs(t)
 	service := &authServiceStub{signIn: func(context.Context, auth.Provider, string, string) (auth.User, auth.SessionTokens, error) {
 		return auth.User{}, auth.SessionTokens{}, auth.ErrInvalidIdentityToken
 	}}
@@ -63,6 +70,9 @@ func TestSignInMapsInvalidProviderTokenToUniformUnauthorized(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), "identity token") {
 		t.Fatalf("internal authentication detail leaked: %s", response.Body.String())
+	}
+	if !strings.Contains(logs.String(), `"msg":"auth sign-in failed"`) {
+		t.Fatalf("expected failed auth log, got %s", logs.String())
 	}
 }
 
@@ -98,4 +108,16 @@ func (*authServiceStub) Logout(context.Context, string) error {
 
 func (*authServiceStub) LogoutAll(context.Context, auth.UserID) error {
 	return errors.New("unexpected logout all")
+}
+
+func captureTestLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buffer bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buffer, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+	})
+	return &buffer
 }
