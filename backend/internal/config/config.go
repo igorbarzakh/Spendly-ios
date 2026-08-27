@@ -33,6 +33,10 @@ type HTTPConfig struct {
 }
 
 func Load() (Config, error) {
+	if err := loadDotEnv(".env"); err != nil {
+		return Config{}, err
+	}
+
 	config := Config{
 		DatabaseURL:     strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		TokenSigningKey: strings.TrimSpace(os.Getenv("TOKEN_SIGNING_KEY")),
@@ -87,4 +91,39 @@ func positiveDuration(key string, fallback time.Duration) (time.Duration, error)
 		return 0, fmt.Errorf("%w: %s", ErrInvalidDuration, key)
 	}
 	return value, nil
+}
+
+func loadDotEnv(path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+
+	for index, rawLine := range strings.Split(string(content), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return fmt.Errorf("parse %s line %d: missing '='", path, index+1)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" || strings.ContainsAny(key, " \t") {
+			return fmt.Errorf("parse %s line %d: invalid key", path, index+1)
+		}
+		if existing := strings.TrimSpace(os.Getenv(key)); existing != "" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+		if err := os.Setenv(key, value); err != nil {
+			return fmt.Errorf("set %s from %s: %w", key, path, err)
+		}
+	}
+	return nil
 }
