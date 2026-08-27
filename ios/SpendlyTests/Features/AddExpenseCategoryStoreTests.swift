@@ -3,6 +3,12 @@ import XCTest
 
 @MainActor
 final class AddExpenseCategoryStoreTests: XCTestCase {
+    func testExpenseListScrollingIsDisabledWhenContentFitsContainer() {
+        XCTAssertTrue(ExpensesScrollState.isScrollDisabled(contentHeight: 120, containerHeight: 120))
+        XCTAssertTrue(ExpensesScrollState.isScrollDisabled(contentHeight: 96, containerHeight: 120))
+        XCTAssertFalse(ExpensesScrollState.isScrollDisabled(contentHeight: 121, containerHeight: 120))
+    }
+
     func testValidatedNewCategoryNameTrimsOuterWhitespaceAndNewlines() {
         let result = AddExpenseCategoryStore.validatedNewCategoryName(
             "\n  Кафе  \n",

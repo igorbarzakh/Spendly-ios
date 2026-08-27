@@ -65,6 +65,8 @@ private struct ExpensesContentView: View {
     @State private var selectedScope: ExpenseScope = .personal
     @State private var isMonthPickerPresented = false
     @State private var isAddExpensePresented = false
+    @State private var expenseListContainerHeight: CGFloat = 0
+    @State private var expenseListContentHeight: CGFloat = 0
 
     private let weekDays = [
         ExpenseDay(weekday: "ПН", day: 17),
@@ -116,22 +118,43 @@ private struct ExpensesContentView: View {
                     .padding(.bottom, 14)
             }
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(expenses.enumerated()), id: \.element.id) { index, item in
-                        Button {
-                            selectedExpense = item
-                        } label: {
-                            ExpenseRow(item: item)
-                                .padding(.horizontal, ExpensesLayout.horizontalPadding)
-                        }
-                        .buttonStyle(.plain)
+            GeometryReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(expenses.enumerated()), id: \.element.id) { index, item in
+                            Button {
+                                selectedExpense = item
+                            } label: {
+                                ExpenseRow(item: item)
+                                    .padding(.horizontal, ExpensesLayout.horizontalPadding)
+                            }
+                            .buttonStyle(.plain)
 
-                        if index < expenses.count - 1 {
-                            Divider()
-                                .overlay(ExpensesLayout.separatorColor)
+                            if index < expenses.count - 1 {
+                                Divider()
+                                    .overlay(ExpensesLayout.separatorColor)
+                            }
                         }
                     }
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear
+                                .preference(key: ExpenseListContentHeightPreferenceKey.self, value: proxy.size.height)
+                        }
+                    }
+                }
+                .scrollDisabled(ExpensesScrollState.isScrollDisabled(
+                    contentHeight: expenseListContentHeight,
+                    containerHeight: expenseListContainerHeight
+                ))
+                .onAppear {
+                    expenseListContainerHeight = proxy.size.height
+                }
+                .onChange(of: proxy.size.height) { _, newValue in
+                    expenseListContainerHeight = newValue
+                }
+                .onPreferenceChange(ExpenseListContentHeightPreferenceKey.self) { newValue in
+                    expenseListContentHeight = newValue
                 }
             }
         }
@@ -153,6 +176,20 @@ private struct ExpensesContentView: View {
             }
             .presentationDetents([.medium])
         }
+    }
+}
+
+struct ExpensesScrollState {
+    static func isScrollDisabled(contentHeight: CGFloat, containerHeight: CGFloat) -> Bool {
+        contentHeight <= containerHeight
+    }
+}
+
+private struct ExpenseListContentHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
