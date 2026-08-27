@@ -35,8 +35,6 @@
 	<string>$(SPENDLY_GOOGLE_SERVER_CLIENT_ID)</string>
 	<key>SPENDLY_API_BASE_URL</key>
 	<string>$(SPENDLY_API_BASE_URL)</string>
-	<key>SPENDLY_APPLE_CLIENT_ID</key>
-	<string>$(SPENDLY_APPLE_CLIENT_ID)</string>
 	<key>SPENDLY_CONFIGURATION</key>
 	<string>$(SPENDLY_CONFIGURATION)</string>
 	<key>SPENDLY_GOOGLE_CLIENT_ID</key>
@@ -45,5 +43,7 @@
 	<string>$(SPENDLY_GOOGLE_SERVER_CLIENT_ID)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>

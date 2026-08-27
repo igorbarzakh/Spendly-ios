@@ -30,7 +30,6 @@ struct AppEnvironment: Sendable {
             apiBaseURL: url,
             googleOAuthClientID: value("SPENDLY_GOOGLE_CLIENT_ID"),
             googleServerClientID: value("SPENDLY_GOOGLE_SERVER_CLIENT_ID"),
-            appleOAuthClientID: value("SPENDLY_APPLE_CLIENT_ID"),
             configuration: configuration
         )
     }
@@ -38,14 +37,12 @@ struct AppEnvironment: Sendable {
     let apiBaseURL: URL
     let googleOAuthClientID: String
     let googleServerClientID: String
-    let appleOAuthClientID: String
     let configuration: Configuration
 
     init(
         apiBaseURL: URL,
         googleOAuthClientID: String,
         googleServerClientID: String,
-        appleOAuthClientID: String,
         configuration: Configuration
     ) throws {
         if configuration != .development,
@@ -61,8 +58,7 @@ struct AppEnvironment: Sendable {
         }
 
         guard !googleOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !googleServerClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !appleOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              !googleServerClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             throw ValidationError.missingOAuthClientID
         }
@@ -70,7 +66,6 @@ struct AppEnvironment: Sendable {
         self.apiBaseURL = apiBaseURL
         self.googleOAuthClientID = googleOAuthClientID
         self.googleServerClientID = googleServerClientID
-        self.appleOAuthClientID = appleOAuthClientID
         self.configuration = configuration
     }
 }

@@ -1,7 +1,31 @@
-import AuthenticationServices
 import GoogleSignIn
-import GoogleSignInSwift
 import SwiftUI
+
+enum AuthenticationViewContent {
+    static let title = "Welcome to Spendly"
+    static let subtitle = "Track. Share. Stay."
+    static let googleButtonTitle = "Continue with Google"
+}
+
+enum AuthenticationButtonMetrics {
+    static let height: CGFloat = 44
+    static let cornerRadius: CGFloat = 8
+    static let iconSize: CGFloat = 20
+    static let iconTitleSpacing: CGFloat = 8
+    static let borderWidth: CGFloat = 1
+}
+
+enum AuthenticationProviderLogoName {
+    static let google = "GoogleLogo"
+}
+
+enum AuthenticationProviderButtonKind: Equatable, Hashable {
+    case google
+}
+
+enum AuthenticationProviderButtonOrder {
+    static let loginScreen: [AuthenticationProviderButtonKind] = [.google]
+}
 
 struct AuthenticationView: View {
     @Bindable var model: AuthenticationModel
@@ -10,27 +34,15 @@ struct AuthenticationView: View {
         VStack(spacing: 24) {
             Spacer()
 
-            VStack(spacing: 8) {
-                Text("Spendly")
-                    .font(.largeTitle.bold())
-                Text("Your purchases, clear and shared.")
-                    .foregroundStyle(.secondary)
-            }
+            WelcomeHeader()
 
             Spacer()
 
-            VStack(spacing: 12) {
-                AppleAuthenticationButton {
-                    Task { await model.signIn(with: .apple) }
+            VStack(spacing: 14) {
+                ForEach(AuthenticationProviderButtonOrder.loginScreen, id: \.self) { provider in
+                    authenticationButton(for: provider)
+                        .disabled(model.isSigningIn)
                 }
-                .frame(height: 44)
-                .disabled(model.isSigningIn)
-
-                GoogleSignInButton {
-                    Task { await model.signIn(with: .google) }
-                }
-                .frame(minHeight: 44)
-                .disabled(model.isSigningIn)
 
                 if model.isSigningIn {
                     ProgressView()
@@ -40,14 +52,25 @@ struct AuthenticationView: View {
                 if let failure = model.failure {
                     Text(message(for: failure))
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(AppColor.danger)
                         .multilineTextAlignment(.center)
                 }
             }
         }
         .padding(24)
+        .background(AppColor.white)
         .onOpenURL { url in
             GIDSignIn.sharedInstance.handle(url)
+        }
+    }
+
+    @ViewBuilder
+    private func authenticationButton(for provider: AuthenticationProviderButtonKind) -> some View {
+        switch provider {
+        case .google:
+            GoogleAuthenticationButton {
+                Task { await model.signIn(with: .google) }
+            }
         }
     }
 
@@ -63,37 +86,88 @@ struct AuthenticationView: View {
     }
 }
 
-private struct AppleAuthenticationButton: UIViewRepresentable {
+private struct WelcomeHeader: View {
+    var body: some View {
+        VStack(spacing: 14) {
+            Image("SpendlyLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 6) {
+                Text(AuthenticationViewContent.title)
+                    .font(.title2.bold())
+                    .foregroundStyle(AppColor.black)
+                    .multilineTextAlignment(.center)
+
+                Text(AuthenticationViewContent.subtitle)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(AppColor.muted)
+                    .multilineTextAlignment(.center)
+            }
+        }
+    }
+}
+
+private struct GoogleAuthenticationButton: View {
     @Environment(\.isEnabled) private var isEnabled
     let action: @MainActor () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(action: action)
+    var body: some View {
+        AuthenticationProviderButton(
+            title: AuthenticationViewContent.googleButtonTitle,
+            logoName: AuthenticationProviderLogoName.google,
+            foregroundColor: AppColor.black,
+            backgroundColor: AppColor.white,
+            borderColor: AppColor.border,
+            action: action
+        )
+        .opacity(isEnabled ? 1 : 0.5)
+        .accessibilityLabel(AuthenticationViewContent.googleButtonTitle)
     }
+}
 
-    func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
-        let button = ASAuthorizationAppleIDButton(type: .continue, style: .black)
-        button.cornerRadius = 8
-        button.addTarget(context.coordinator, action: #selector(Coordinator.invoke), for: .touchUpInside)
-        return button
-    }
+private struct AuthenticationProviderButton: View {
+    let title: String
+    let logoName: String
+    let foregroundColor: Color
+    let backgroundColor: Color
+    let borderColor: Color
+    let action: @MainActor () -> Void
 
-    func updateUIView(_ button: ASAuthorizationAppleIDButton, context: Context) {
-        button.isEnabled = isEnabled
-        button.alpha = isEnabled ? 1 : 0.5
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        private let action: @MainActor () -> Void
-
-        init(action: @escaping @MainActor () -> Void) {
-            self.action = action
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: AuthenticationButtonMetrics.iconTitleSpacing) {
+                logoView
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(foregroundColor)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: AuthenticationButtonMetrics.height)
+            .padding(.horizontal, 18)
+            .background(backgroundColor)
+            .clipShape(RoundedRectangle(cornerRadius: AuthenticationButtonMetrics.cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AuthenticationButtonMetrics.cornerRadius, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: AuthenticationButtonMetrics.borderWidth)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: AuthenticationButtonMetrics.cornerRadius, style: .continuous))
         }
+        .buttonStyle(.plain)
+    }
 
-        @objc func invoke() {
-            action()
-        }
+    @ViewBuilder
+    private var logoView: some View {
+        Image(logoName)
+            .resizable()
+            .scaledToFit()
+            .frame(
+                width: AuthenticationButtonMetrics.iconSize,
+                height: AuthenticationButtonMetrics.iconSize
+            )
+            .accessibilityHidden(true)
     }
 }
 

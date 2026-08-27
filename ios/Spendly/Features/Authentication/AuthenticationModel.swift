@@ -28,16 +28,13 @@ final class AuthenticationModel {
     private(set) var failure: AppFailure?
 
     private let sessionRepository: any SessionRepository
-    private let appleCoordinator: any AuthenticationCoordinator
     private let googleCoordinator: any AuthenticationCoordinator
 
     init(
         sessionRepository: any SessionRepository,
-        appleCoordinator: any AuthenticationCoordinator,
         googleCoordinator: any AuthenticationCoordinator
     ) {
         self.sessionRepository = sessionRepository
-        self.appleCoordinator = appleCoordinator
         self.googleCoordinator = googleCoordinator
     }
 
@@ -60,8 +57,7 @@ final class AuthenticationModel {
         state = .signingIn(provider)
         failure = nil
         do {
-            let coordinator = provider == .apple ? appleCoordinator : googleCoordinator
-            let credential = try await coordinator.credential()
+            let credential = try await googleCoordinator.credential()
             guard credential.provider == provider else {
                 throw AuthenticationProviderError.invalidCredential
             }

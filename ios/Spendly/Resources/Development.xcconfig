@@ -1,7 +1,6 @@
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) DEBUG DEVELOPMENT
 SPENDLY_CONFIGURATION = development
-SPENDLY_API_BASE_URL = http:/$()/localhost:8080
+SPENDLY_API_BASE_URL = http:/$()/192.168.0.204:8080
 SPENDLY_GOOGLE_CLIENT_ID = 692163323161-2neei2dkv151mi08bcfpgmp131n2rj2k.apps.googleusercontent.com
 SPENDLY_GOOGLE_SERVER_CLIENT_ID = 692163323161-g765gvghlkt03fei38qsggjc02rru7ek.apps.googleusercontent.com
 SPENDLY_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.692163323161-2neei2dkv151mi08bcfpgmp131n2rj2k
-SPENDLY_APPLE_CLIENT_ID = app.spendly.ios

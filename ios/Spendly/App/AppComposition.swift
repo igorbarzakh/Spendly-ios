@@ -45,7 +45,6 @@ final class AppComposition {
         mutationTrigger.configure(syncEngine)
         self.authenticationModel = AuthenticationModel(
             sessionRepository: sessionRepository,
-            appleCoordinator: AppleSignInCoordinator(),
             googleCoordinator: GoogleSignInCoordinator(
                 clientID: environment.googleOAuthClientID,
                 serverClientID: environment.googleServerClientID

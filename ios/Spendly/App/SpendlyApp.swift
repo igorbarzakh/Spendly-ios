@@ -42,15 +42,8 @@ private struct SpendlyRootView: View {
             case .signedOut, .signingIn:
                 AuthenticationView(model: model)
             case .authenticated:
-                NavigationStack {
-                    ContentUnavailableView(
-                        "Spendly is connected",
-                        systemImage: "checkmark.circle",
-                        description: Text("Purchase screens are ready to use the Go API repositories.")
-                    )
-                    .toolbar {
-                        Button("Sign out") { Task { await model.signOut() } }
-                    }
+                ExpensesHomeView {
+                    Task { await model.signOut() }
                 }
             }
         }

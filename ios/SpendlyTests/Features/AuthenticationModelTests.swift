@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import XCTest
 @testable import Spendly
@@ -18,11 +17,11 @@ final class AuthenticationModelTests: XCTestCase {
     func testProviderNonceReachesSessionRepositoryUnchanged() async {
         let session = UserSession(userID: UserID(rawValue: UUID()))
         let repository = AuthenticationRepositoryStub(signInSession: session)
-        let credential = ProviderCredential(provider: .apple, idToken: "apple-token", nonce: "raw-nonce")
-        let apple = AuthenticationCoordinatorStub(provider: .apple, result: .success(credential))
-        let model = makeModel(repository: repository, apple: apple)
+        let credential = ProviderCredential(provider: .google, idToken: "google-token", nonce: "raw-nonce")
+        let google = AuthenticationCoordinatorStub(provider: .google, result: .success(credential))
+        let model = makeModel(repository: repository, google: google)
 
-        await model.signIn(with: .apple)
+        await model.signIn(with: .google)
 
         let receivedCredential = await repository.lastCredential()
         XCTAssertEqual(receivedCredential, credential)
@@ -45,29 +44,16 @@ final class AuthenticationModelTests: XCTestCase {
         XCTAssertNil(receivedCredential)
     }
 
-    func testOnlyAppleAndGoogleProvidersAreExposed() {
-        XCTAssertEqual(AuthenticationProvider.allCases, [.apple, .google])
-    }
-
-    func testAppleNonceContainsSHA256OfRawValue() throws {
-        let nonce = try AppleNonce.generate()
-        let expectedHash = SHA256.hash(data: Data(nonce.rawValue.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-
-        XCTAssertFalse(nonce.rawValue.isEmpty)
-        XCTAssertEqual(nonce.hashedValue, expectedHash)
-        XCTAssertNotEqual(nonce.rawValue, nonce.hashedValue)
+    func testOnlyGoogleProviderIsExposed() {
+        XCTAssertEqual(AuthenticationProvider.allCases, [.google])
     }
 
     private func makeModel(
         repository: AuthenticationRepositoryStub,
-        apple: AuthenticationCoordinatorStub? = nil,
         google: AuthenticationCoordinatorStub? = nil
     ) -> AuthenticationModel {
         AuthenticationModel(
             sessionRepository: repository,
-            appleCoordinator: apple ?? AuthenticationCoordinatorStub(provider: .apple),
             googleCoordinator: google ?? AuthenticationCoordinatorStub(provider: .google)
         )
     }

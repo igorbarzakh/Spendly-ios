@@ -7,14 +7,12 @@ final class SmokeTests: XCTestCase {
             apiBaseURL: XCTUnwrap(URL(string: "https://api.spendly.app")),
             googleOAuthClientID: "google-client-id",
             googleServerClientID: "google-server-client-id",
-            appleOAuthClientID: "app.spendly.ios",
             configuration: .production
         )
 
         XCTAssertEqual(environment.apiBaseURL.host, "api.spendly.app")
         XCTAssertEqual(environment.googleOAuthClientID, "google-client-id")
         XCTAssertEqual(environment.googleServerClientID, "google-server-client-id")
-        XCTAssertEqual(environment.appleOAuthClientID, "app.spendly.ios")
     }
 
     func testApplicationEnvironmentRejectsDirectManagedDatabaseHost() throws {
@@ -26,7 +24,6 @@ final class SmokeTests: XCTestCase {
                 apiBaseURL: url,
                 googleOAuthClientID: "google-client-id",
                 googleServerClientID: "google-server-client-id",
-                appleOAuthClientID: "app.spendly.ios",
                 configuration: .production
             )
         )
@@ -40,7 +37,6 @@ final class SmokeTests: XCTestCase {
                 apiBaseURL: url,
                 googleOAuthClientID: "google-client-id",
                 googleServerClientID: "google-server-client-id",
-                appleOAuthClientID: "app.spendly.ios",
                 configuration: .production
             )
         )
@@ -51,7 +47,6 @@ final class SmokeTests: XCTestCase {
             apiBaseURL: XCTUnwrap(URL(string: "http://localhost:8080")),
             googleOAuthClientID: "google-client-id",
             googleServerClientID: "google-server-client-id",
-            appleOAuthClientID: "app.spendly.ios",
             configuration: .development
         )
 

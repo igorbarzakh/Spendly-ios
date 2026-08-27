@@ -136,7 +136,7 @@ final class RemoteSessionRepositoryTests: XCTestCase {
 
         do {
             _ = try await repository.signIn(
-                with: ProviderCredential(provider: .apple, idToken: "apple-token", nonce: "raw-nonce")
+                with: ProviderCredential(provider: .google, idToken: "google-token", nonce: "raw-nonce")
             )
             XCTFail("Expected Keychain write failure")
         } catch let error as SessionStoreTestError {

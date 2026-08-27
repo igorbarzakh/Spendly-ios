@@ -4,4 +4,3 @@ SPENDLY_API_BASE_URL = https:/$()/staging-api.spendly.app
 SPENDLY_GOOGLE_CLIENT_ID = 692163323161-2neei2dkv151mi08bcfpgmp131n2rj2k.apps.googleusercontent.com
 SPENDLY_GOOGLE_SERVER_CLIENT_ID = 692163323161-g765gvghlkt03fei38qsggjc02rru7ek.apps.googleusercontent.com
 SPENDLY_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.692163323161-2neei2dkv151mi08bcfpgmp131n2rj2k
-SPENDLY_APPLE_CLIENT_ID = app.spendly.ios

@@ -1,7 +1,6 @@
 import Foundation
 
 enum AuthenticationProvider: String, CaseIterable, Sendable {
-    case apple
     case google
 }
 

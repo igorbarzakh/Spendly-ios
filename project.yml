@@ -32,29 +32,24 @@ targets:
       - package: GoogleSignIn
         products:
           - GoogleSignIn
-          - GoogleSignInSwift
     info:
       path: ios/Spendly/Resources/Info.plist
       properties:
         SPENDLY_API_BASE_URL: $(SPENDLY_API_BASE_URL)
         SPENDLY_GOOGLE_CLIENT_ID: $(SPENDLY_GOOGLE_CLIENT_ID)
         SPENDLY_GOOGLE_SERVER_CLIENT_ID: $(SPENDLY_GOOGLE_SERVER_CLIENT_ID)
-        SPENDLY_APPLE_CLIENT_ID: $(SPENDLY_APPLE_CLIENT_ID)
         SPENDLY_CONFIGURATION: $(SPENDLY_CONFIGURATION)
         GIDClientID: $(SPENDLY_GOOGLE_CLIENT_ID)
         GIDServerClientID: $(SPENDLY_GOOGLE_SERVER_CLIENT_ID)
+        UIUserInterfaceStyle: Light
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLSchemes:
               - $(SPENDLY_GOOGLE_REVERSED_CLIENT_ID)
         UILaunchScreen: {}
-    entitlements:
-      path: ios/Spendly/Resources/Spendly.entitlements
-      properties:
-        com.apple.developer.applesignin:
-          - Default
     settings:
       base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: app.spendly.ios
         PRODUCT_NAME: Spendly
   SpendlyTests:

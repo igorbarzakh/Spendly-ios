@@ -34,7 +34,7 @@ final class GoogleSignInCoordinator: AuthenticationCoordinator {
             throw AuthenticationProviderError.presentationUnavailable
         }
 
-        let nonce = try AppleNonce.generate()
+        let nonce = try OAuthNonce.generate()
         GIDSignIn.sharedInstance.configuration = Self.makeConfiguration(
             clientID: clientID,
             serverClientID: serverClientID
