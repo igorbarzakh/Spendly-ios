@@ -72,6 +72,50 @@ final class RemoteRepositoryContractTests: XCTestCase {
         XCTAssertNil(body["version"])
     }
 
+    func testCreateDetailedPurchaseSendsCartFields() async throws {
+        let responseJSON = #"{"id":"\#(purchaseID.uuidString)","kind":"detailed","merchant":"Market","currency_code":"RUB","spent_at":"2026-08-24T12:00:00Z","local_date":"2026-08-24","time_zone":"Europe/Moscow","delivery_fee_minor":9900,"discount":{"type":"percentage","value":10},"items":[{"id":"55555555-5555-4555-8555-555555555555","position":0,"name":"Milk","category":"Food","quantity":2,"unit_price_minor":9500,"amount_minor":19000,"created_at":"2026-08-24T12:00:01Z","updated_at":"2026-08-24T12:00:01Z"}],"owner_id":"\#(ownerID.uuidString)","version":1,"total_amount_minor":27000,"created_at":"2026-08-24T12:00:01Z","updated_at":"2026-08-24T12:00:01Z"}"#
+        let transport = RepositoryTransport(responses: [.json(201, responseJSON)])
+        let repository = RemotePurchaseRepository(apiClient: APIClient(baseURL: baseURL, transport: transport))
+        let key = UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!
+        let draft = PurchaseDraft(
+            id: PurchaseID(rawValue: purchaseID),
+            ownerID: UserID(rawValue: ownerID),
+            groupID: nil,
+            merchant: "Market",
+            spentAt: date("2026-08-24T12:00:00Z"),
+            localDate: localDate("2026-08-24"),
+            timeZone: "Europe/Moscow",
+            kind: .detailed(
+                items: [
+                    try PurchaseItem(
+                        id: PurchaseItemID(rawValue: UUID(uuidString: "55555555-5555-4555-8555-555555555555")!),
+                        name: "Milk",
+                        category: "Food",
+                        quantity: 2,
+                        unitPrice: Money(minorUnits: 9_500, currencyCode: "RUB")
+                    )
+                ]
+            ),
+            deliveryFee: try Money(minorUnits: 9_900, currencyCode: "RUB"),
+            discount: PurchaseDiscount(type: .percentage, value: 10)
+        )
+
+        let purchase = try await repository.create(draft, idempotencyKey: key)
+
+        XCTAssertEqual(purchase.total.minorUnits, 27_000)
+        let requests = await transport.requests()
+        let request = try XCTUnwrap(requests.first)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any])
+        XCTAssertEqual(body["delivery_fee_minor"] as? Int, 9_900)
+        let discount = try XCTUnwrap(body["discount"] as? [String: Any])
+        XCTAssertEqual(discount["type"] as? String, "percentage")
+        XCTAssertEqual(discount["value"] as? Int, 10)
+        let items = try XCTUnwrap(body["items"] as? [[String: Any]])
+        XCTAssertEqual(items.first?["quantity"] as? Int, 2)
+        XCTAssertEqual(items.first?["unit_price_minor"] as? Int, 9_500)
+        XCTAssertEqual(items.first?["amount_minor"] as? Int, 19_000)
+    }
+
     func testMapsVersionConflictWithoutOverwritingCache() async throws {
         let cachedPurchase = try makeQuickPurchase()
         let cache = RepositoryCache(snapshot: [cachedPurchase])

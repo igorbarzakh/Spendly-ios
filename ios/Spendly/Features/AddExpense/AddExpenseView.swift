@@ -17,7 +17,7 @@ struct AddExpenseView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft = AddExpenseDraft()
-    @State private var isItemsPlaceholderPresented = false
+    @State private var isItemsSheetPresented = false
     @State private var isDatePickerPresented = false
     @State private var isCategoryPickerPresented = false
     @FocusState private var isMerchantFocused: Bool
@@ -44,11 +44,6 @@ struct AddExpenseView: View {
             )
             .background(AppColor.gray)
             .toolbar(.hidden, for: .navigationBar)
-            .alert("Товары будут следующим шагом", isPresented: $isItemsPlaceholderPresented) {
-                Button("ОК", role: .cancel) {}
-            } message: {
-                Text("В этой версии экран показывает структуру добавления расхода без редактора позиций.")
-            }
             .sheet(isPresented: $isDatePickerPresented) {
                 NavigationStack {
                     VStack {
@@ -78,6 +73,9 @@ struct AddExpenseView: View {
             }
             .sheet(isPresented: $isCategoryPickerPresented) {
                 CategorySelectionSheet(selectedCategory: $draft.selectedCategory)
+            }
+            .sheet(isPresented: $isItemsSheetPresented) {
+                CartItemsSheet(draft: $draft)
             }
         }
     }
@@ -120,10 +118,21 @@ struct AddExpenseView: View {
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(AppColor.black)
 
-            MoneyAmountTextField(text: $draft.amountText)
-                .padding(.horizontal, 18)
-                .frame(height: 72)
-                .whiteSurface(cornerRadius: 18)
+            if draft.hasItems {
+                Text(MoneyFormatter.rublesMinorUnits(draft.totalMinorUnits ?? 0))
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(AppColor.black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .padding(.horizontal, 18)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                    .whiteSurface(cornerRadius: 18)
+            } else {
+                MoneyAmountTextField(text: $draft.amountText)
+                    .padding(.horizontal, 18)
+                    .frame(height: 72)
+                    .whiteSurface(cornerRadius: 18)
+            }
         }
     }
 
@@ -213,22 +222,60 @@ struct AddExpenseView: View {
 
     private var itemsSection: some View {
         Button {
-            isItemsPlaceholderPresented = true
+            isItemsSheetPresented = true
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "plus")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(AppColor.blue)
+            if draft.items.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "plus")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(AppColor.blue)
 
-                Text("Добавить товары")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(AppColor.black)
+                    Text("Добавить товары")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(AppColor.black)
 
-                Spacer()
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
+                .frame(height: 56)
+                .whiteSurface(cornerRadius: 16)
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Товары")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(AppColor.black)
+
+                    VStack(spacing: 10) {
+                        ForEach(draft.items.prefix(3)) { item in
+                            HStack {
+                                Text(item.displayName)
+                                    .foregroundStyle(AppColor.black)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(MoneyFormatter.rublesMinorUnits(item.totalMinorUnits ?? 0))
+                                    .foregroundStyle(AppColor.black)
+                            }
+                            .font(.body)
+                        }
+                    }
+
+                    HStack(alignment: .bottom) {
+                        Text("\(draft.items.count) \(draft.items.count == 1 ? "товар" : "товара")")
+                            .foregroundStyle(AppColor.muted)
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(MoneyFormatter.rublesMinorUnits(draft.itemsSubtotalMinorUnits ?? 0))
+                                .foregroundStyle(AppColor.black)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AppColor.muted)
+                        }
+                    }
+                    .font(.body.weight(.medium))
+                }
+                .padding(18)
+                .whiteSurface(cornerRadius: 16)
             }
-            .padding(.horizontal, 18)
-            .frame(height: 56)
-            .whiteSurface(cornerRadius: 16)
         }
         .buttonStyle(ContrastRowButtonStyle())
     }
@@ -564,11 +611,338 @@ private struct MoneyAmountTextField: UIViewRepresentable {
     }
 }
 
+private struct CartItemsSheet: View {
+    @Binding var draft: AddExpenseDraft
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var itemFormDraft: CartItemFormDraft?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if !draft.items.isEmpty {
+                            VStack(spacing: 0) {
+                                ForEach(draft.items) { item in
+                                    itemRow(item)
+
+                                    if item.id != draft.items.last?.id {
+                                        Divider()
+                                            .overlay(AppColor.border)
+                                            .padding(.leading, 16)
+                                    }
+                                }
+                            }
+                            .whiteSurface(cornerRadius: 16)
+                        }
+
+                        Button {
+                            itemFormDraft = CartItemFormDraft()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "plus")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(AppColor.blue)
+
+                                Text("Добавить товар")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(AppColor.black)
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, 18)
+                            .frame(height: 56)
+                            .whiteSurface(cornerRadius: 16)
+                        }
+                        .buttonStyle(ContrastRowButtonStyle())
+
+                        totalsControls
+                    }
+                    .padding(20)
+                }
+
+                cartSummary
+                    .padding(20)
+                    .background(AppColor.white)
+            }
+            .background(AppColor.gray)
+            .navigationTitle("Товары")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Готово") {
+                        dismiss()
+                    }
+                    .foregroundStyle(AppColor.blue)
+                }
+            }
+            .sheet(item: $itemFormDraft) { formDraft in
+                CartItemFormSheet(initialDraft: formDraft) { saved in
+                    draft.upsertItem(saved.item)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func itemRow(_ item: AddExpenseItemDraft) -> some View {
+        Button {
+            itemFormDraft = CartItemFormDraft(item: item)
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.displayName)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(AppColor.black)
+                        .lineLimit(1)
+
+                    Text("\(item.quantity) × \(MoneyFormatter.rublesMinorUnits(item.unitPriceMinorUnits ?? 0))")
+                        .font(.subheadline)
+                        .foregroundStyle(AppColor.muted)
+                }
+
+                Spacer()
+
+                Text(MoneyFormatter.rublesMinorUnits(item.totalMinorUnits ?? 0))
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(AppColor.black)
+
+                Button(role: .destructive) {
+                    draft.removeItem(id: item.id)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.red)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 68)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var totalsControls: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Доставка")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(AppColor.black)
+
+                MoneyAmountTextField(text: $draft.deliveryFeeText)
+                    .padding(.horizontal, 18)
+                    .frame(height: 56)
+                    .whiteSurface(cornerRadius: 16)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Скидка")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(AppColor.black)
+
+                HStack(spacing: 10) {
+                    TextField("0", text: $draft.discountText)
+                        .keyboardType(.decimalPad)
+                        .foregroundStyle(AppColor.black)
+                        .padding(.horizontal, 14)
+                        .frame(height: 48)
+                        .whiteSurface(cornerRadius: 14)
+                        .onChange(of: draft.discountText) { _, _ in
+                            draft.normalizeDiscountText()
+                        }
+
+                    Picker("Тип скидки", selection: $draft.discountType) {
+                        Text("₽").tag(AddExpenseDiscountType.fixed)
+                        Text("%").tag(AddExpenseDiscountType.percentage)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 112)
+                    .onChange(of: draft.discountType) { _, _ in
+                        draft.normalizeDiscountText()
+                    }
+                }
+            }
+        }
+    }
+
+    private var cartSummary: some View {
+        VStack(spacing: 10) {
+            summaryRow("Товары", draft.itemsSubtotalMinorUnits ?? 0)
+            summaryRow("Доставка", draft.deliveryFeeMinorUnits ?? 0)
+            summaryRow("Скидка", -(draft.discountMinorUnits ?? 0))
+
+            Divider()
+                .overlay(AppColor.border)
+
+            summaryRow("Итого", draft.totalMinorUnits ?? 0, isTotal: true)
+        }
+    }
+
+    private func summaryRow(_ title: String, _ value: Int64, isTotal: Bool = false) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(MoneyFormatter.rublesMinorUnits(value))
+        }
+        .font(isTotal ? .headline.weight(.bold) : .body.weight(.medium))
+        .foregroundStyle(AppColor.black)
+    }
+}
+
+private struct CartItemFormSheet: View {
+    let initialDraft: CartItemFormDraft
+    let onSave: (CartItemFormDraft) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: CartItemFormDraft
+    @FocusState private var isNameFocused: Bool
+
+    init(initialDraft: CartItemFormDraft, onSave: @escaping (CartItemFormDraft) -> Void) {
+        self.initialDraft = initialDraft
+        self.onSave = onSave
+        _draft = State(initialValue: initialDraft)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                formField(title: "Название") {
+                    TextField("", text: $draft.name, prompt: Text("Например, Молоко").foregroundStyle(AppColor.placeholder))
+                        .textInputAutocapitalization(.words)
+                        .focused($isNameFocused)
+                }
+
+                formField(title: "Количество") {
+                    TextField("1", value: $draft.quantity, format: .number)
+                        .keyboardType(.numberPad)
+                }
+
+                formField(title: "Цена") {
+                    MoneyAmountTextField(text: $draft.unitPriceText)
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .background(AppColor.gray)
+            .navigationTitle(initialDraft.isExistingItem ? "Товар" : "Новый товар")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Сохранить") {
+                        onSave(draft)
+                        dismiss()
+                    }
+                    .disabled(!draft.canSave)
+                    .foregroundStyle(draft.canSave ? AppColor.blue : AppColor.muted)
+                }
+            }
+            .onAppear {
+                isNameFocused = true
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func formField<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(AppColor.black)
+
+            content()
+                .font(.body)
+                .foregroundStyle(AppColor.black)
+                .padding(.horizontal, 18)
+                .frame(height: 56)
+                .whiteSurface(cornerRadius: 16)
+        }
+    }
+}
+
+private struct CartItemFormDraft: Identifiable {
+    let id: UUID
+    var name: String
+    var quantity: Int64
+    var unitPriceText: String
+    let isExistingItem: Bool
+
+    init(item: AddExpenseItemDraft? = nil) {
+        if let item {
+            id = item.id
+            name = item.name
+            quantity = item.quantity
+            unitPriceText = item.unitPriceText
+            isExistingItem = true
+        } else {
+            id = UUID()
+            name = ""
+            quantity = 1
+            unitPriceText = ""
+            isExistingItem = false
+        }
+    }
+
+    var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && quantity > 0
+            && MoneyFormatter.minorUnits(from: unitPriceText) != nil
+    }
+
+    var item: AddExpenseItemDraft {
+        AddExpenseItemDraft(id: id, name: name, quantity: quantity, unitPriceText: unitPriceText)
+    }
+}
+
+struct AddExpenseItemDraft: Identifiable, Equatable, Hashable {
+    let id: UUID
+    var name: String
+    var quantity: Int64 = 1
+    var unitPriceText: String
+
+    var displayName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var unitPriceMinorUnits: Int64? {
+        MoneyFormatter.minorUnits(from: unitPriceText).map(Int64.init)
+    }
+
+    var totalMinorUnits: Int64? {
+        guard let unitPriceMinorUnits, quantity > 0 else { return nil }
+        let result = unitPriceMinorUnits.multipliedReportingOverflow(by: quantity)
+        guard !result.overflow else { return nil }
+        return result.partialValue
+    }
+}
+
+enum AddExpenseDiscountType: Equatable, Hashable {
+    case fixed
+    case percentage
+}
+
 struct AddExpenseDraft: Equatable {
     var amountText = ""
     var merchant = ""
     var selectedCategory: AddExpenseCategory?
     var spentAt = Date.now
+    var items: [AddExpenseItemDraft] = []
+    var deliveryFeeText = ""
+    var discountText = ""
+    var discountType: AddExpenseDiscountType = .fixed
 
     var canSave: Bool {
         normalizedMinorUnits != nil && !merchantTrimmed.isEmpty && selectedCategory != nil
@@ -589,7 +963,80 @@ struct AddExpenseDraft: Equatable {
     }
 
     var normalizedMinorUnits: Int? {
-        MoneyFormatter.minorUnits(from: amountText)
+        if let totalMinorUnits, hasItems {
+            return Int(totalMinorUnits)
+        }
+        return MoneyFormatter.minorUnits(from: amountText)
+    }
+
+    var hasItems: Bool {
+        !items.isEmpty
+    }
+
+    var itemsSubtotalMinorUnits: Int64? {
+        guard !items.isEmpty else { return 0 }
+        var subtotal: Int64 = 0
+        for item in items {
+            guard let total = item.totalMinorUnits else { return nil }
+            let result = subtotal.addingReportingOverflow(total)
+            guard !result.overflow else { return nil }
+            subtotal = result.partialValue
+        }
+        return subtotal
+    }
+
+    var deliveryFeeMinorUnits: Int64? {
+        guard !deliveryFeeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return 0
+        }
+        return MoneyFormatter.nonNegativeMinorUnits(from: deliveryFeeText).map(Int64.init)
+    }
+
+    var discountMinorUnits: Int64? {
+        guard let subtotal = itemsSubtotalMinorUnits else { return nil }
+        guard !discountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return 0
+        }
+
+        switch discountType {
+        case .fixed:
+            return MoneyFormatter.nonNegativeMinorUnits(from: discountText).map(Int64.init)
+        case .percentage:
+            guard let value = Int64(discountText.filter(\.isNumber)), (0...100).contains(value) else {
+                return nil
+            }
+            return subtotal * value / 100
+        }
+    }
+
+    var totalMinorUnits: Int64? {
+        guard hasItems, let subtotal = itemsSubtotalMinorUnits, let delivery = deliveryFeeMinorUnits, let discount = discountMinorUnits else {
+            return nil
+        }
+        return max(0, subtotal + delivery - discount)
+    }
+
+    mutating func upsertItem(_ item: AddExpenseItemDraft) {
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            items[index] = item
+        } else {
+            items.append(item)
+        }
+    }
+
+    mutating func removeItem(id: UUID) {
+        items.removeAll { $0.id == id }
+    }
+
+    mutating func normalizeDiscountText() {
+        switch discountType {
+        case .fixed:
+            discountText = MoneyFormatter.inputText(from: discountText)
+        case .percentage:
+            let digits = discountText.filter(\.isNumber)
+            let value = min(Int(digits) ?? 0, 100)
+            discountText = digits.isEmpty ? "" : "\(value)"
+        }
     }
 }
 

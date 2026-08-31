@@ -44,6 +44,8 @@ struct PurchaseItemDTO: Codable, Sendable {
     let position: Int
     let name: String
     let category: String
+    let quantity: Int64?
+    let unitPriceMinor: Int64?
     let amountMinor: Int64
     let createdAt: Date?
     let updatedAt: Date?
@@ -54,7 +56,14 @@ struct PurchaseItemDraftDTO: Encodable, Sendable {
     let position: Int
     let name: String
     let category: String
+    let quantity: Int64?
+    let unitPriceMinor: Int64?
     let amountMinor: Int64
+}
+
+struct PurchaseDiscountDTO: Codable, Sendable {
+    let type: String
+    let value: Int64
 }
 
 struct PurchaseDraftDTO: Encodable, Sendable {
@@ -68,6 +77,8 @@ struct PurchaseDraftDTO: Encodable, Sendable {
     let spentAt: Date
     let localDate: String
     let timeZone: String
+    let deliveryFeeMinor: Int64?
+    let discount: PurchaseDiscountDTO?
     let items: [PurchaseItemDraftDTO]
 }
 
@@ -82,6 +93,8 @@ struct PurchaseDTO: Codable, Sendable {
     let spentAt: Date
     let localDate: String
     let timeZone: String
+    let deliveryFeeMinor: Int64?
+    let discount: PurchaseDiscountDTO?
     let items: [PurchaseItemDTO]
     let ownerId: UUID?
     let version: Int64?

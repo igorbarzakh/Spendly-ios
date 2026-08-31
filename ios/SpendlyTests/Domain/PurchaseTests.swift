@@ -52,6 +52,75 @@ final class PurchaseTests: XCTestCase {
         XCTAssertEqual(purchase.total.minorUnits, 48_400)
     }
 
+    func testDetailedPurchaseTotalIncludesDeliveryAndFixedDiscount() throws {
+        let purchase = try Purchase.detailed(
+            id: PurchaseID(rawValue: UUID()),
+            ownerID: ownerID,
+            groupID: nil,
+            merchant: "Магазин",
+            items: cartItems(),
+            deliveryFee: Money(minorUnits: 9_900, currencyCode: "RUB"),
+            discount: PurchaseDiscount(type: .fixed, value: 5_000),
+            spentAt: spentAt,
+            localDate: spentAt,
+            timeZone: "Europe/Moscow",
+            version: 1
+        )
+
+        XCTAssertEqual(purchase.itemsSubtotal.minorUnits, 43_500)
+        XCTAssertEqual(purchase.discountAmount.minorUnits, 5_000)
+        XCTAssertEqual(purchase.total.minorUnits, 48_400)
+    }
+
+    func testDetailedPurchasePercentageDiscountUsesItemsSubtotalOnly() throws {
+        let purchase = try Purchase.detailed(
+            id: PurchaseID(rawValue: UUID()),
+            ownerID: ownerID,
+            groupID: nil,
+            merchant: "Магазин",
+            items: cartItems(),
+            deliveryFee: Money(minorUnits: 9_900, currencyCode: "RUB"),
+            discount: PurchaseDiscount(type: .percentage, value: 10),
+            spentAt: spentAt,
+            localDate: spentAt,
+            timeZone: "Europe/Moscow",
+            version: 1
+        )
+
+        XCTAssertEqual(purchase.discountAmount.minorUnits, 4_350)
+        XCTAssertEqual(purchase.total.minorUnits, 49_050)
+    }
+
+    func testDetailedPurchaseTotalIsClampedToZero() throws {
+        let purchase = try Purchase.detailed(
+            id: PurchaseID(rawValue: UUID()),
+            ownerID: ownerID,
+            groupID: nil,
+            merchant: "Магазин",
+            items: cartItems(),
+            discount: PurchaseDiscount(type: .fixed, value: 99_999),
+            spentAt: spentAt,
+            localDate: spentAt,
+            timeZone: "Europe/Moscow",
+            version: 1
+        )
+
+        XCTAssertEqual(purchase.total.minorUnits, 0)
+    }
+
+    func testPurchaseItemTotalIsQuantityTimesUnitPrice() throws {
+        let item = try PurchaseItem(
+            id: PurchaseItemID(rawValue: UUID()),
+            name: "Молоко",
+            category: "Продукты",
+            quantity: 2,
+            unitPrice: Money(minorUnits: 9_500, currencyCode: "RUB")
+        )
+
+        XCTAssertEqual(item.totalPrice.minorUnits, 19_000)
+        XCTAssertEqual(item.amount, item.totalPrice)
+    }
+
     func testDetailedPurchaseRejectsEmptyItems() {
         XCTAssertThrowsError(
             try Purchase.detailed(
@@ -102,5 +171,30 @@ final class PurchaseTests: XCTestCase {
             XCTAssertEqual(error as? Money.ValidationError, .overflow)
         }
     }
-}
 
+    private func cartItems() throws -> [PurchaseItem] {
+        [
+            try PurchaseItem(
+                id: PurchaseItemID(rawValue: UUID()),
+                name: "Молоко",
+                category: "Продукты",
+                quantity: 2,
+                unitPrice: Money(minorUnits: 9_500, currencyCode: "RUB")
+            ),
+            try PurchaseItem(
+                id: PurchaseItemID(rawValue: UUID()),
+                name: "Хлеб",
+                category: "Продукты",
+                quantity: 1,
+                unitPrice: Money(minorUnits: 8_900, currencyCode: "RUB")
+            ),
+            try PurchaseItem(
+                id: PurchaseItemID(rawValue: UUID()),
+                name: "Бананы",
+                category: "Продукты",
+                quantity: 1,
+                unitPrice: Money(minorUnits: 15_600, currencyCode: "RUB")
+            ),
+        ]
+    }
+}

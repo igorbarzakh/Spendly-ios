@@ -59,6 +59,27 @@ func TestRepositoryRejectsChangedIdempotentRequest(t *testing.T) {
 	}
 }
 
+func TestRepositoryCreateNormalizesDetailedItemTotals(t *testing.T) {
+	pool := purchaseTestDB(t)
+	owner := auth.UserID("11111111-1111-4111-8111-111111111111")
+	insertPurchaseUser(t, pool, owner)
+	repository := NewPostgresRepository(pool)
+	draft := validDetailedCartDraft()
+	draft.Items[0].AmountMinor = 1
+
+	created, err := repository.Create(context.Background(), owner, draft, "44444444-4444-4444-8444-444444444444")
+
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created.Items[0].AmountMinor != 19000 {
+		t.Fatalf("expected normalized item total, got %d", created.Items[0].AmountMinor)
+	}
+	if created.TotalAmountMinor != 43500 {
+		t.Fatalf("expected derived purchase total, got %d", created.TotalAmountMinor)
+	}
+}
+
 func TestRepositoryEnforcesOwnerAndVersionOnMutation(t *testing.T) {
 	pool := purchaseTestDB(t)
 	owner := auth.UserID("11111111-1111-4111-8111-111111111111")

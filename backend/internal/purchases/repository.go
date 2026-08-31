@@ -54,18 +54,20 @@ func (repository *PostgresRepository) Create(ctx context.Context, owner auth.Use
 			return Purchase{}, ErrForbidden
 		}
 	}
+	draft = normalizeDraftTotals(draft)
 	var category any
 	var amount any
 	if draft.Kind == KindQuick {
 		category, amount = draft.Category, draft.AmountMinor
 	}
 	now := time.Now().UTC()
-	_, err = tx.Exec(ctx, `insert into purchases(id,owner_id,group_id,kind,merchant,category,amount_minor,currency_code,spent_at,local_date,time_zone,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`, draft.ID, owner, draft.GroupID, draft.Kind, draft.Merchant, category, amount, draft.CurrencyCode, draft.SpentAt, draft.LocalDate, draft.TimeZone, now)
+	_, err = tx.Exec(ctx, `insert into purchases(id,owner_id,group_id,kind,merchant,category,amount_minor,currency_code,spent_at,local_date,time_zone,delivery_fee_minor,discount_type,discount_value,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)`, draft.ID, owner, draft.GroupID, draft.Kind, draft.Merchant, category, amount, draft.CurrencyCode, draft.SpentAt, draft.LocalDate, draft.TimeZone, draft.DeliveryFeeMinor, discountType(draft.Discount), discountValue(draft.Discount), now)
 	if err != nil {
 		return Purchase{}, err
 	}
 	for _, item := range draft.Items {
-		if _, err = tx.Exec(ctx, `insert into purchase_items(id,purchase_id,position,name,category,amount_minor,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$7)`, item.ID, draft.ID, item.Position, item.Name, item.Category, item.AmountMinor, now); err != nil {
+		amount, _ := item.TotalMinor()
+		if _, err = tx.Exec(ctx, `insert into purchase_items(id,purchase_id,position,name,category,quantity,unit_price_minor,amount_minor,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`, item.ID, draft.ID, item.Position, item.Name, item.Category, item.Quantity, item.UnitPriceMinor, amount, now); err != nil {
 			return Purchase{}, err
 		}
 	}
@@ -83,7 +85,7 @@ func (repository *PostgresRepository) Create(ctx context.Context, owner auth.Use
 }
 
 func (repository *PostgresRepository) List(ctx context.Context, user auth.UserID, scope Scope, from, to time.Time) ([]Purchase, error) {
-	query := `select p.id,p.group_id,p.kind,p.merchant,coalesce(p.category,''),coalesce(p.amount_minor,0),p.currency_code,p.spent_at,p.local_date::text,p.time_zone,p.owner_id,p.version,p.created_at,p.updated_at,p.deleted_at from purchases p where p.deleted_at is null and p.spent_at >= $2 and p.spent_at < $3 and `
+	query := `select p.id,p.group_id,p.kind,p.merchant,coalesce(p.category,''),coalesce(p.amount_minor,0),p.currency_code,p.spent_at,p.local_date::text,p.time_zone,p.delivery_fee_minor,p.discount_type,p.discount_value,p.owner_id,p.version,p.created_at,p.updated_at,p.deleted_at from purchases p where p.deleted_at is null and p.spent_at >= $2 and p.spent_at < $3 and `
 	args := []any{user, from, to}
 	if scope.GroupID == nil {
 		query += `p.owner_id=$1`
@@ -100,18 +102,23 @@ func (repository *PostgresRepository) List(ctx context.Context, user auth.UserID
 	var result []Purchase
 	for rows.Next() {
 		var p Purchase
-		if err = rows.Scan(&p.ID, &p.GroupID, &p.Kind, &p.Merchant, &p.Category, &p.AmountMinor, &p.CurrencyCode, &p.SpentAt, &p.LocalDate, &p.TimeZone, &p.OwnerID, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		var discountTypeValue *DiscountType
+		var discountAmountValue *int64
+		if err = rows.Scan(&p.ID, &p.GroupID, &p.Kind, &p.Merchant, &p.Category, &p.AmountMinor, &p.CurrencyCode, &p.SpentAt, &p.LocalDate, &p.TimeZone, &p.DeliveryFeeMinor, &discountTypeValue, &discountAmountValue, &p.OwnerID, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, err
 		}
+		if discountTypeValue != nil && discountAmountValue != nil {
+			p.Discount = &Discount{Type: *discountTypeValue, Value: *discountAmountValue}
+		}
 		if p.Kind == KindDetailed {
-			itemRows, e := repository.pool.Query(ctx, `select id,position,name,category,amount_minor,created_at,updated_at from purchase_items where purchase_id=$1 order by position`, p.ID)
+			itemRows, e := repository.pool.Query(ctx, `select id,position,name,category,quantity,unit_price_minor,amount_minor,created_at,updated_at from purchase_items where purchase_id=$1 order by position`, p.ID)
 			if e != nil {
 				return nil, e
 			}
 			for itemRows.Next() {
 				var item ItemDraft
 				var createdAt, updatedAt time.Time
-				if e = itemRows.Scan(&item.ID, &item.Position, &item.Name, &item.Category, &item.AmountMinor, &createdAt, &updatedAt); e != nil {
+				if e = itemRows.Scan(&item.ID, &item.Position, &item.Name, &item.Category, &item.Quantity, &item.UnitPriceMinor, &item.AmountMinor, &createdAt, &updatedAt); e != nil {
 					itemRows.Close()
 					return nil, e
 				}
@@ -145,13 +152,14 @@ func (repository *PostgresRepository) Update(ctx context.Context, user auth.User
 	if version != expected {
 		return Purchase{}, ErrVersionConflict
 	}
+	purchase.Draft = normalizeDraftTotals(purchase.Draft)
 	purchase.OwnerID = owner
 	var category any
 	var amount any
 	if purchase.Kind == KindQuick {
 		category, amount = purchase.Category, purchase.AmountMinor
 	}
-	_, err = tx.Exec(ctx, `update purchases set group_id=$2,kind=$3,merchant=$4,category=$5,amount_minor=$6,currency_code=$7,spent_at=$8,local_date=$9,time_zone=$10 where id=$1`, purchase.ID, purchase.GroupID, purchase.Kind, purchase.Merchant, category, amount, purchase.CurrencyCode, purchase.SpentAt, purchase.LocalDate, purchase.TimeZone)
+	_, err = tx.Exec(ctx, `update purchases set group_id=$2,kind=$3,merchant=$4,category=$5,amount_minor=$6,currency_code=$7,spent_at=$8,local_date=$9,time_zone=$10,delivery_fee_minor=$11,discount_type=$12,discount_value=$13 where id=$1`, purchase.ID, purchase.GroupID, purchase.Kind, purchase.Merchant, category, amount, purchase.CurrencyCode, purchase.SpentAt, purchase.LocalDate, purchase.TimeZone, purchase.DeliveryFeeMinor, discountType(purchase.Discount), discountValue(purchase.Discount))
 	if err != nil {
 		return Purchase{}, err
 	}
@@ -160,7 +168,8 @@ func (repository *PostgresRepository) Update(ctx context.Context, user auth.User
 	}
 	now := time.Now().UTC()
 	for _, item := range purchase.Items {
-		if _, err = tx.Exec(ctx, `insert into purchase_items(id,purchase_id,position,name,category,amount_minor,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$7)`, item.ID, purchase.ID, item.Position, item.Name, item.Category, item.AmountMinor, now); err != nil {
+		amount, _ := item.TotalMinor()
+		if _, err = tx.Exec(ctx, `insert into purchase_items(id,purchase_id,position,name,category,quantity,unit_price_minor,amount_minor,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`, item.ID, purchase.ID, item.Position, item.Name, item.Category, item.Quantity, item.UnitPriceMinor, amount, now); err != nil {
 			return Purchase{}, err
 		}
 	}
@@ -223,4 +232,27 @@ func canMutate(ctx context.Context, tx pgx.Tx, user, owner auth.UserID, group *s
 	var allowed bool
 	err := tx.QueryRow(ctx, `select exists(select 1 from group_members m join groups g on g.id=m.group_id where m.group_id=$1 and m.user_id=$2 and g.archived_at is null and (m.role='owner' or m.can_manage_expenses))`, *group, user).Scan(&allowed)
 	return allowed, err
+}
+
+func discountType(discount *Discount) any {
+	if discount == nil {
+		return nil
+	}
+	return discount.Type
+}
+
+func discountValue(discount *Discount) any {
+	if discount == nil {
+		return nil
+	}
+	return discount.Value
+}
+
+func normalizeDraftTotals(draft Draft) Draft {
+	for index, item := range draft.Items {
+		if amount, err := item.TotalMinor(); err == nil {
+			draft.Items[index].AmountMinor = amount
+		}
+	}
+	return draft
 }

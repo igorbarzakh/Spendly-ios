@@ -219,6 +219,8 @@ components:
         spent_at: { type: string, format: date-time }
         local_date: { type: string, format: date }
         time_zone: { type: string }
+        delivery_fee_minor: { type: integer, format: int64, minimum: 0 }
+        discount: { $ref: '#/components/schemas/PurchaseDiscount' }
         items:
           type: array
           items: { $ref: '#/components/schemas/PurchaseItem' }
@@ -243,9 +245,18 @@ components:
         spent_at: { type: string, format: date-time }
         local_date: { type: string, format: date }
         time_zone: { type: string, minLength: 1 }
+        delivery_fee_minor: { type: integer, format: int64, minimum: 0 }
+        discount: { $ref: '#/components/schemas/PurchaseDiscount' }
         items:
           type: array
           items: { $ref: '#/components/schemas/PurchaseItem' }
+    PurchaseDiscount:
+      type: object
+      additionalProperties: false
+      required: [type, value]
+      properties:
+        type: { type: string, enum: [fixed, percentage] }
+        value: { type: integer, format: int64, minimum: 0 }
     PurchaseItem:
       type: object
       required: [id, position, name, category, amount_minor]
@@ -254,6 +265,8 @@ components:
         position: { type: integer, minimum: 0 }
         name: { type: string, minLength: 1 }
         category: { type: string, minLength: 1 }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        unit_price_minor: { type: integer, format: int64, minimum: 0 }
         amount_minor: { type: integer, format: int64, minimum: 1 }
     ProviderSignInRequest:
       type: object

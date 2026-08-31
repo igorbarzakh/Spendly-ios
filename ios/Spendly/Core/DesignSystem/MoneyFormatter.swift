@@ -12,6 +12,12 @@ enum MoneyFormatter {
         return (formatter.string(from: value) ?? "\(amount)") + " ₽"
     }
 
+    static func rublesMinorUnits(_ minorUnits: Int64) -> String {
+        let major = Decimal(minorUnits) / 100
+        let formatter = groupedMoneyFormatter
+        return (formatter.string(from: NSDecimalNumber(decimal: major)) ?? "\(major)") + " ₽"
+    }
+
     static func inputText(from raw: String) -> String {
         let sanitized = sanitizedInput(raw)
         guard !sanitized.isEmpty else { return "" }
@@ -29,12 +35,20 @@ enum MoneyFormatter {
     }
 
     static func minorUnits(from input: String) -> Int? {
+        minorUnits(from: input, allowingZero: false)
+    }
+
+    static func nonNegativeMinorUnits(from input: String) -> Int? {
+        minorUnits(from: input, allowingZero: true)
+    }
+
+    private static func minorUnits(from input: String, allowingZero: Bool) -> Int? {
         let normalized = sanitizedInput(input)
             .replacingOccurrences(of: decimalSeparator, with: ".")
 
         guard
             let value = Decimal(string: normalized),
-            value > 0
+            allowingZero ? value >= 0 : value > 0
         else {
             return nil
         }
@@ -50,6 +64,13 @@ enum MoneyFormatter {
         formatter.usesGroupingSeparator = true
         formatter.maximumFractionDigits = 0
         formatter.locale = Locale(identifier: "ru_RU")
+        return formatter
+    }
+
+    private static var groupedMoneyFormatter: NumberFormatter {
+        let formatter = groupedIntegerFormatter
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 2
         return formatter
     }
 

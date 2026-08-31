@@ -17,7 +17,9 @@ PostgreSQL is the server source of truth behind the Spendly Go REST API. SwiftDa
 - IDs are client-generated UUIDs so offline mutations retain stable identity.
 - `amount_minor` values are `bigint`; floating-point money is not accepted.
 - Quick purchases require a positive amount and category.
-- Detailed purchases store neither an editable amount nor a purchase-level category. Their total is derived from positive `purchase_items.amount_minor` values.
+- Detailed purchases store neither an editable amount nor a purchase-level category. Their total is derived from positive cart item totals, optional `delivery_fee_minor`, and optional discount metadata.
+- Cart items may store `quantity` and `unit_price_minor`; `amount_minor` remains the persisted item total and must equal `quantity * unit_price_minor` when unit price is present.
+- Discounts are typed as `fixed` or `percentage`. Fixed discounts use minor currency units; percentage discounts are limited to `0...100` and apply only to the items subtotal, not delivery.
 - Item positions are unique within a purchase and start at zero.
 - `spent_at` is the UTC event timestamp. `local_date` and `time_zone` preserve the operation's calendar meaning.
 - Updates advance the positive `version` and refresh `updated_at`. Transactional commands will use this version for optimistic concurrency.

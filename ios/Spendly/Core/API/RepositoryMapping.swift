@@ -25,7 +25,14 @@ enum RepositoryMapping {
         }
         guard dto.kind == "detailed" else { throw APIError.decoding }
         let items = try dto.items.sorted { $0.position < $1.position }.map {
-            try PurchaseItem(
+            if let quantity = $0.quantity, let unitPriceMinor = $0.unitPriceMinor, unitPriceMinor > 0 {
+                return try PurchaseItem(
+                    id: PurchaseItemID(rawValue: $0.id), name: $0.name, category: $0.category,
+                    quantity: quantity,
+                    unitPrice: Money(minorUnits: unitPriceMinor, currencyCode: dto.currencyCode)
+                )
+            }
+            return try PurchaseItem(
                 id: PurchaseItemID(rawValue: $0.id), name: $0.name, category: $0.category,
                 amount: Money(minorUnits: $0.amountMinor, currencyCode: dto.currencyCode)
             )
@@ -33,7 +40,10 @@ enum RepositoryMapping {
         return try Purchase.detailed(
             id: PurchaseID(rawValue: dto.id), ownerID: UserID(rawValue: ownerID),
             groupID: dto.groupId.map(GroupID.init(rawValue:)), merchant: dto.merchant,
-            items: items, spentAt: dto.spentAt, localDate: localDate,
+            items: items,
+            deliveryFee: Money(minorUnits: dto.deliveryFeeMinor ?? 0, currencyCode: dto.currencyCode),
+            discount: dto.discount.map(discount(from:)),
+            spentAt: dto.spentAt, localDate: localDate,
             timeZone: dto.timeZone, version: version
         )
     }
@@ -54,16 +64,29 @@ enum RepositoryMapping {
             items = values.enumerated().map { index, item in
                 PurchaseItemDraftDTO(
                     id: item.id.rawValue, position: index, name: item.name,
-                    category: item.category, amountMinor: item.amount.minorUnits
+                    category: item.category, quantity: item.quantity,
+                    unitPriceMinor: item.unitPrice.minorUnits,
+                    amountMinor: item.totalPrice.minorUnits
                 )
             }
+        }
+        let deliveryFeeMinor: Int64?
+        let discount: PurchaseDiscountDTO?
+        switch draft.kind {
+        case .quick:
+            deliveryFeeMinor = nil
+            discount = nil
+        case .detailed:
+            deliveryFeeMinor = draft.deliveryFee.minorUnits
+            discount = draft.discount.map(dto(from:))
         }
         return PurchaseDraftDTO(
             id: draft.id.rawValue, groupId: draft.groupID?.rawValue, kind: kind,
             merchant: draft.merchant, category: category, amountMinor: amount,
             currencyCode: currency, spentAt: draft.spentAt,
             localDate: localDateFormatter().string(from: draft.localDate),
-            timeZone: draft.timeZone, items: items
+            timeZone: draft.timeZone, deliveryFeeMinor: deliveryFeeMinor,
+            discount: discount, items: items
         )
     }
 
@@ -71,7 +94,8 @@ enum RepositoryMapping {
         makeDTO(
             id: purchase.id, ownerID: purchase.ownerID, groupID: purchase.groupID,
             merchant: purchase.merchant, spentAt: purchase.spentAt, localDate: purchase.localDate,
-            timeZone: purchase.timeZone, version: purchase.version, kind: purchase.kind
+            timeZone: purchase.timeZone, version: purchase.version, kind: purchase.kind,
+            deliveryFee: purchase.deliveryFee, discount: purchase.discount
         )
     }
 
@@ -87,7 +111,9 @@ enum RepositoryMapping {
         case let .detailed(items):
             return try Purchase.detailed(
                 id: draft.id, ownerID: draft.ownerID, groupID: draft.groupID,
-                merchant: draft.merchant, items: items, spentAt: draft.spentAt,
+                merchant: draft.merchant, items: items,
+                deliveryFee: draft.deliveryFee, discount: draft.discount,
+                spentAt: draft.spentAt,
                 localDate: draft.localDate, timeZone: draft.timeZone, version: 1
             )
         }
@@ -132,25 +158,38 @@ enum RepositoryMapping {
 
     private static func makeDTO(
         id: PurchaseID, ownerID: UserID, groupID: GroupID?, merchant: String,
-        spentAt: Date, localDate: Date, timeZone: String, version: Int64?, kind: Purchase.Kind
+        spentAt: Date, localDate: Date, timeZone: String, version: Int64?,
+        kind: Purchase.Kind, deliveryFee: Money, discount purchaseDiscount: PurchaseDiscount?
     ) -> PurchaseDTO {
         let category: String?
         let amount: Int64?
         let currency: String
         let items: [PurchaseItemDTO]
+        let deliveryFeeMinor: Int64?
+        let discount: PurchaseDiscountDTO?
         switch kind {
         case let .quick(value, money):
             category = value; amount = money.minorUnits; currency = money.currencyCode; items = []
+            deliveryFeeMinor = nil
+            discount = nil
         case let .detailed(values):
             category = nil; amount = nil; currency = values.first?.amount.currencyCode ?? "RUB"
             items = values.enumerated().map { index, item in
-                PurchaseItemDTO(id: item.id.rawValue, position: index, name: item.name, category: item.category, amountMinor: item.amount.minorUnits, createdAt: nil, updatedAt: nil)
+                PurchaseItemDTO(
+                    id: item.id.rawValue, position: index, name: item.name,
+                    category: item.category, quantity: item.quantity,
+                    unitPriceMinor: item.unitPrice.minorUnits,
+                    amountMinor: item.totalPrice.minorUnits, createdAt: nil, updatedAt: nil
+                )
             }
+            deliveryFeeMinor = values.isEmpty ? nil : deliveryFee.minorUnits
+            discount = purchaseDiscount.map(dto(from:))
         }
         return PurchaseDTO(
             id: id.rawValue, groupId: groupID?.rawValue, kind: kindName(kind), merchant: merchant,
             category: category, amountMinor: amount, currencyCode: currency, spentAt: spentAt,
-            localDate: localDateFormatter().string(from: localDate), timeZone: timeZone, items: items,
+            localDate: localDateFormatter().string(from: localDate), timeZone: timeZone,
+            deliveryFeeMinor: deliveryFeeMinor, discount: discount, items: items,
             ownerId: ownerID.rawValue, version: version, totalAmountMinor: nil,
             createdAt: nil, updatedAt: nil, deletedAt: nil
         )
@@ -158,5 +197,16 @@ enum RepositoryMapping {
 
     private static func kindName(_ kind: Purchase.Kind) -> String {
         switch kind { case .quick: "quick"; case .detailed: "detailed" }
+    }
+
+    private static func discount(from dto: PurchaseDiscountDTO) -> PurchaseDiscount {
+        PurchaseDiscount(
+            type: dto.type == PurchaseDiscountType.percentage.rawValue ? .percentage : .fixed,
+            value: dto.value
+        )
+    }
+
+    private static func dto(from discount: PurchaseDiscount) -> PurchaseDiscountDTO {
+        PurchaseDiscountDTO(type: discount.type.rawValue, value: discount.value)
     }
 }
