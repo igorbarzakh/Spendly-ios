@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/igorbarzakh/spendly-ios/backend/internal/config"
 	"github.com/igorbarzakh/spendly-ios/backend/internal/postgres"
 	"github.com/igorbarzakh/spendly-ios/backend/migrations"
 )
@@ -12,6 +13,9 @@ import (
 func main() {
 	if len(os.Args) != 2 {
 		fatal("usage: migrate up|down|status")
+	}
+	if err := config.LoadDotEnv(".env"); err != nil {
+		fatal("load config: %v", err)
 	}
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {

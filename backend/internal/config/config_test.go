@@ -109,6 +109,23 @@ HTTP_ADDRESS=:9090
 	}
 }
 
+func TestLoadDotEnvPopulatesMissingEnvironmentValues(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Chdir(t.TempDir())
+	content := []byte("DATABASE_URL=postgres://spendly:secret@localhost:55432/spendly_test?sslmode=disable\n")
+	if err := os.WriteFile(filepath.Join(".", ".env"), content, 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+
+	if err := LoadDotEnv(".env"); err != nil {
+		t.Fatalf("load .env: %v", err)
+	}
+
+	if os.Getenv("DATABASE_URL") == "" {
+		t.Fatal("expected DATABASE_URL from .env")
+	}
+}
+
 func setValidEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://spendly:secret@postgres/spendly")

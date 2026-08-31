@@ -33,7 +33,7 @@ type HTTPConfig struct {
 }
 
 func Load() (Config, error) {
-	if err := loadDotEnv(".env"); err != nil {
+	if err := LoadDotEnv(".env"); err != nil {
 		return Config{}, err
 	}
 
@@ -93,7 +93,7 @@ func positiveDuration(key string, fallback time.Duration) (time.Duration, error)
 	return value, nil
 }
 
-func loadDotEnv(path string) error {
+func LoadDotEnv(path string) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
