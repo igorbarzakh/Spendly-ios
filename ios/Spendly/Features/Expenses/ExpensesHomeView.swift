@@ -75,7 +75,7 @@ private struct ExpensesContentView: View {
     ]
 
     private var week: ExpenseWeek {
-        ExpenseWeek.current()
+        ExpenseWeek.current(containing: selectedDate)
     }
 
     var body: some View {
@@ -96,7 +96,7 @@ private struct ExpensesContentView: View {
                         onSelect: { selectedDate = $0 }
                     )
                     .padding(.top, 22)
-                    .padding(.horizontal, -6)
+                    .padding(.horizontal, -ExpensesLayout.horizontalPadding)
 
                     Divider()
                         .overlay(ExpensesLayout.separatorColor)
@@ -269,6 +269,244 @@ private struct WeekCalendar: View {
     let selectedDate: Date
     let onSelect: (Date) -> Void
 
+    @State private var pageOffset: CGFloat = 0
+    @State private var isSettling = false
+    @State private var dragAxis: WeekCalendarDragAxis?
+    @State private var didTriggerPagingHaptic = false
+
+    private let calendar = Calendar.current
+    private let pageThresholdRatio: CGFloat = 0.50
+    private let pagingAnimation = Animation.smooth(duration: 0.44, extraBounce: 0)
+    private let pagingSettleDelay: TimeInterval = 0.44
+    private let weekPageGap: CGFloat = 56
+    private let weekContentInset: CGFloat = ExpensesLayout.horizontalPadding
+
+    var body: some View {
+        VStack(spacing: 14) {
+            WeekdayHeader(days: days)
+
+            GeometryReader { proxy in
+                let width = proxy.size.width
+                let pageStride = width + weekPageGap
+
+                HStack(spacing: weekPageGap) {
+                    WeekDateRow(
+                        days: weekDays(weeksFromSelectedDate: -1),
+                        selectedDate: selectedDateForWeek(weeksFromSelectedDate: -1),
+                        onSelect: select,
+                        horizontalInset: weekContentInset
+                    )
+                    .frame(width: width)
+
+                    WeekDateRow(
+                        days: days,
+                        selectedDate: selectedDate,
+                        onSelect: select,
+                        horizontalInset: weekContentInset
+                    )
+                    .frame(width: width)
+
+                    WeekDateRow(
+                        days: weekDays(weeksFromSelectedDate: 1),
+                        selectedDate: selectedDateForWeek(weeksFromSelectedDate: 1),
+                        onSelect: select,
+                        horizontalInset: weekContentInset
+                    )
+                    .frame(width: width)
+                }
+                .offset(x: -pageStride + clamped(offset: pageOffset, pageStride: pageStride))
+                .animation(isSettling ? pagingAnimation : nil, value: pageOffset)
+                .contentShape(Rectangle())
+                .clipped()
+                .highPriorityGesture(dragGesture(width: width, pageStride: pageStride), including: .gesture)
+                .allowsHitTesting(!isSettling)
+            }
+            .frame(height: 38)
+        }
+    }
+
+    private func weekDays(weeksFromSelectedDate weeks: Int) -> [ExpenseDay] {
+        let date = selectedDateForWeek(weeksFromSelectedDate: weeks)
+        return ExpenseWeek.current(containing: date).days
+    }
+
+    private func selectedDateForWeek(weeksFromSelectedDate weeks: Int) -> Date {
+        ExpenseWeek.date(byMoving: selectedDate, weeks: weeks, calendar: calendar) ?? selectedDate
+    }
+
+    private func select(_ date: Date) {
+        guard !isSettling else {
+            return
+        }
+
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        onSelect(date)
+    }
+
+    private func finishDrag(_ value: DragGesture.Value, width: CGFloat) {
+        let translation = value.translation.width
+        let weeks = ExpenseWeekPaging.weekOffset(
+            translation: Double(translation),
+            pageWidth: Double(width),
+            thresholdRatio: Double(pageThresholdRatio)
+        )
+
+        guard weeks != 0 else {
+            isSettling = true
+            withAnimation(pagingAnimation) {
+                pageOffset = 0
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + pagingSettleDelay) {
+                isSettling = false
+            }
+            return
+        }
+
+        let nextSelectedDate = selectedDateForWeek(weeksFromSelectedDate: weeks)
+        let pageStride = width + weekPageGap
+        let targetOffset = weeks > 0 ? -pageStride : pageStride
+
+        isSettling = true
+        withAnimation(pagingAnimation) {
+            pageOffset = targetOffset
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + pagingSettleDelay) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+
+            withTransaction(transaction) {
+                onSelect(nextSelectedDate)
+                pageOffset = 0
+            }
+
+            isSettling = false
+        }
+    }
+
+    private func clamped(offset: CGFloat, pageStride: CGFloat) -> CGFloat {
+        min(max(offset, -pageStride), pageStride)
+    }
+
+    private func updatePageOffset(_ offset: CGFloat, pageStride: CGFloat) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+
+        withTransaction(transaction) {
+            pageOffset = clamped(offset: offset, pageStride: pageStride)
+        }
+    }
+
+    private func updatePagingHaptic(for translation: CGFloat, width: CGFloat) {
+        let weeks = ExpenseWeekPaging.weekOffset(
+            translation: Double(translation),
+            pageWidth: Double(width),
+            thresholdRatio: Double(pageThresholdRatio)
+        )
+
+        guard weeks != 0, !didTriggerPagingHaptic else {
+            return
+        }
+
+        didTriggerPagingHaptic = true
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.7)
+    }
+
+    private func dragGesture(width: CGFloat, pageStride: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .local)
+            .onChanged { value in
+                guard !isSettling else {
+                    return
+                }
+
+                switch dragAxis {
+                case .horizontal:
+                    updatePageOffset(value.translation.width, pageStride: pageStride)
+                    updatePagingHaptic(for: value.translation.width, width: width)
+                case .vertical:
+                    break
+                case nil:
+                    let axis = axis(for: value)
+                    dragAxis = axis
+
+                    if axis == .horizontal {
+                        updatePageOffset(value.translation.width, pageStride: pageStride)
+                        updatePagingHaptic(for: value.translation.width, width: width)
+                    }
+                }
+            }
+            .onEnded { value in
+                guard !isSettling else {
+                    dragAxis = nil
+                    didTriggerPagingHaptic = false
+                    return
+                }
+
+                let axis = dragAxis
+                dragAxis = nil
+                didTriggerPagingHaptic = false
+
+                guard axis == .horizontal else {
+                    withAnimation(pagingAnimation) {
+                        pageOffset = 0
+                    }
+                    return
+                }
+
+                finishDrag(value, width: width)
+            }
+    }
+
+    private func axis(for value: DragGesture.Value) -> WeekCalendarDragAxis? {
+        let horizontalDistance = abs(value.translation.width)
+        let verticalDistance = abs(value.translation.height)
+
+        if horizontalDistance >= 3, horizontalDistance >= verticalDistance {
+            return .horizontal
+        }
+        if verticalDistance >= 8, verticalDistance > horizontalDistance * 1.2 {
+            return .vertical
+        }
+
+        return nil
+    }
+}
+
+private enum WeekCalendarDragAxis {
+    case horizontal
+    case vertical
+}
+
+private struct WeekdayHeader: View {
+    let days: [ExpenseDay]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
+                if index > 0 {
+                    Spacer(minLength: 0)
+                }
+
+                Text(day.weekday)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppColor.black)
+                    .frame(width: 32)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
+            }
+        }
+        .padding(.horizontal, ExpensesLayout.horizontalPadding)
+    }
+}
+
+private struct WeekDateRow: View {
+    let days: [ExpenseDay]
+    let selectedDate: Date
+    let onSelect: (Date) -> Void
+    let horizontalInset: CGFloat
+
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
@@ -279,54 +517,36 @@ private struct WeekCalendar: View {
                 let isSelected = Calendar.current.isDate(day.date, inSameDayAs: selectedDate)
                 let isToday = day.isToday
 
-                Button {
-                    guard !isSelected else { return }
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onSelect(day.date)
-                } label: {
-                    VStack(spacing: 14) {
-                        Text(day.weekday)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(AppColor.black)
-                            .transaction { transaction in
-                                transaction.animation = nil
-                            }
-
-                        Text("\(day.day)")
-                            .font(.system(size: 19, weight: isSelected ? .medium : .regular))
-                            .foregroundStyle(day.foregroundColor(isSelected: isSelected, isToday: isToday))
-                            .frame(width: 30, height: 30)
-                            .transaction { transaction in
-                                transaction.animation = nil
-                            }
-                            .background {
-                                Circle()
-                                    .fill(isToday ? AppColor.blue : AppColor.black)
-                                    .frame(width: 34, height: 34)
-                                    .scaleEffect(isSelected ? 1 : 0.72)
-                                    .opacity(isSelected ? 1 : 0)
-                                    .animation(
-                                        .spring(response: 0.24, dampingFraction: 0.72),
-                                        value: isSelected
-                                    )
-                            }
+                Text("\(day.day)")
+                    .font(.system(size: 19, weight: isSelected ? .medium : .regular))
+                    .foregroundStyle(day.foregroundColor(isSelected: isSelected, isToday: isToday))
+                    .frame(width: 30, height: 30)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
+                    .background {
+                        Circle()
+                            .fill(isToday ? AppColor.blue : AppColor.black)
+                            .frame(width: 34, height: 34)
+                            .scaleEffect(isSelected ? 1 : 0.72)
+                            .opacity(isSelected ? 1 : 0)
+                            .animation(
+                                .spring(response: 0.24, dampingFraction: 0.72),
+                                value: isSelected
+                            )
                     }
                     .frame(width: 32)
                     .contentShape(Rectangle())
-                }
-                .buttonStyle(CalendarDayButtonStyle(isEnabled: !isSelected))
+                    .onTapGesture {
+                        guard !isSelected else { return }
+                        onSelect(day.date)
+                    }
+                    .scaleEffect(1)
+                    .animation(.easeOut(duration: 0.10), value: isSelected)
+                    .frame(height: 38)
             }
         }
-    }
-}
-
-private struct CalendarDayButtonStyle: ButtonStyle {
-    let isEnabled: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(isEnabled && configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.10), value: configuration.isPressed)
+        .padding(.horizontal, horizontalInset)
     }
 }
 

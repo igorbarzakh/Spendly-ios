@@ -7,7 +7,11 @@ struct ExpenseWeek {
         days.first(where: \.isToday)
     }
 
-    static func current(containing date: Date = Date(), calendar: Calendar = .current) -> ExpenseWeek {
+    static func current(
+        containing date: Date = Date(),
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> ExpenseWeek {
         var calendar = calendar
         calendar.firstWeekday = 2
 
@@ -29,11 +33,21 @@ struct ExpenseWeek {
                 weekday: ExpenseWeek.weekdayTitles[offset],
                 day: day,
                 date: calendar.startOfDay(for: dayDate),
-                isToday: calendar.isDate(dayDate, inSameDayAs: date)
+                isToday: calendar.isDate(dayDate, inSameDayAs: today)
             )
         }
 
         return ExpenseWeek(days: days)
+    }
+
+    static func current(containing date: Date, calendar: Calendar) -> ExpenseWeek {
+        current(containing: date, today: date, calendar: calendar)
+    }
+
+    static func date(byMoving date: Date, weeks: Int, calendar: Calendar = .current) -> Date? {
+        calendar.date(byAdding: .weekOfYear, value: weeks, to: date).map {
+            calendar.startOfDay(for: $0)
+        }
     }
 
     private static let weekdayTitles = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"]
@@ -46,6 +60,16 @@ struct ExpenseDay: Identifiable {
     let isToday: Bool
 
     var id: Date { date }
+}
+
+enum ExpenseWeekPaging {
+    static func weekOffset(translation: Double, pageWidth: Double, thresholdRatio: Double = 0.50) -> Int {
+        guard pageWidth > 0, abs(translation) >= pageWidth * thresholdRatio else {
+            return 0
+        }
+
+        return translation < 0 ? 1 : -1
+    }
 }
 
 enum ExpenseDateText {
