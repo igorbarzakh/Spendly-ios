@@ -60,7 +60,7 @@ struct ExpensesHomeView: View {
 }
 
 private struct ExpensesContentView: View {
-    @State private var selectedDay = 22
+    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var selectedExpense: ExpenseListItem?
     @State private var selectedScope: ExpenseScope = .personal
     @State private var isMonthPickerPresented = false
@@ -68,21 +68,15 @@ private struct ExpensesContentView: View {
     @State private var expenseListContainerHeight: CGFloat = 0
     @State private var expenseListContentHeight: CGFloat = 0
 
-    private let weekDays = [
-        ExpenseDay(weekday: "ПН", day: 17),
-        ExpenseDay(weekday: "ВТ", day: 18),
-        ExpenseDay(weekday: "СР", day: 19),
-        ExpenseDay(weekday: "ЧТ", day: 20),
-        ExpenseDay(weekday: "ПТ", day: 21),
-        ExpenseDay(weekday: "СБ", day: 22),
-        ExpenseDay(weekday: "ВС", day: 23)
-    ]
-
     private let expenses = [
         ExpenseListItem(title: "Кино", subtitle: "Личное · Развлечения", amount: MoneyFormatter.rubles(1_000)),
         ExpenseListItem(title: "Ozon Fresh", subtitle: "Семья · 5 товаров", amount: MoneyFormatter.rubles(1_486)),
         ExpenseListItem(title: "Метро", subtitle: "Личное · Транспорт", amount: MoneyFormatter.rubles(169))
     ]
+
+    private var week: ExpenseWeek {
+        ExpenseWeek.current()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -90,15 +84,16 @@ private struct ExpensesContentView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ExpensesHeader(
                         onMonthTap: { isMonthPickerPresented = true },
+                        monthTitle: ExpenseDateText.monthTitle(for: selectedDate),
                         selectedScope: $selectedScope,
                         onAddTap: { isAddExpensePresented = true }
                     )
                     .padding(.top, 2)
 
                     WeekCalendar(
-                        days: weekDays,
-                        selectedDay: selectedDay,
-                        onSelect: { selectedDay = $0 }
+                        days: week.days,
+                        selectedDate: selectedDate,
+                        onSelect: { selectedDate = $0 }
                     )
                     .padding(.top, 22)
                     .padding(.horizontal, -6)
@@ -112,7 +107,7 @@ private struct ExpensesContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(AppColor.gray.ignoresSafeArea(edges: .top))
 
-                DailySummary(selectedDay: selectedDay)
+                DailySummary(selectedDate: selectedDate)
                     .padding(.horizontal, ExpensesLayout.horizontalPadding)
                     .padding(.top, 18)
                     .padding(.bottom, 14)
@@ -161,7 +156,7 @@ private struct ExpensesContentView: View {
         .background(AppColor.white)
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Месяц", isPresented: $isMonthPickerPresented, titleVisibility: .visible) {
-            Button("Август") {}
+            Button(ExpenseDateText.monthTitle(for: selectedDate)) {}
             Button("Отмена", role: .cancel) {}
         }
         .sheet(isPresented: $isAddExpensePresented) {
@@ -206,6 +201,7 @@ private extension ExpenseScope {
 
 private struct ExpensesHeader: View {
     let onMonthTap: () -> Void
+    let monthTitle: String
     @Binding var selectedScope: ExpenseScope
     let onAddTap: () -> Void
 
@@ -215,7 +211,7 @@ private struct ExpensesHeader: View {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.left")
                         .font(.headline.weight(.semibold))
-                    Text("Август")
+                    Text(monthTitle)
                         .font(.headline.weight(.bold))
                 }
                 .foregroundStyle(.primary)
@@ -270,9 +266,8 @@ private struct ExpensesHeader: View {
 
 private struct WeekCalendar: View {
     let days: [ExpenseDay]
-    let selectedDay: Int
-    let onSelect: (Int) -> Void
-    private let todayDay = 22
+    let selectedDate: Date
+    let onSelect: (Date) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -281,13 +276,13 @@ private struct WeekCalendar: View {
                     Spacer(minLength: 0)
                 }
 
-                let isSelected = day.day == selectedDay
-                let isToday = day.day == todayDay
+                let isSelected = Calendar.current.isDate(day.date, inSameDayAs: selectedDate)
+                let isToday = day.isToday
 
                 Button {
                     guard !isSelected else { return }
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onSelect(day.day)
+                    onSelect(day.date)
                 } label: {
                     VStack(spacing: 14) {
                         Text(day.weekday)
@@ -336,8 +331,7 @@ private struct CalendarDayButtonStyle: ButtonStyle {
 }
 
 private struct DailySummary: View {
-    let selectedDay: Int
-    private let todayDay = 22
+    let selectedDate: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -353,7 +347,7 @@ private struct DailySummary: View {
     }
 
     private var title: String {
-        selectedDay == todayDay ? "Сегодня" : "\(selectedDay) августа"
+        Calendar.current.isDateInToday(selectedDate) ? "Сегодня" : ExpenseDateText.dayMonthTitle(for: selectedDate)
     }
 }
 
@@ -428,12 +422,7 @@ private enum SpendlyTab: Hashable {
     case profile
 }
 
-private struct ExpenseDay: Identifiable {
-    let weekday: String
-    let day: Int
-
-    var id: Int { day }
-
+private extension ExpenseDay {
     func foregroundColor(isSelected: Bool, isToday: Bool) -> Color {
         if isSelected {
             return AppColor.white
