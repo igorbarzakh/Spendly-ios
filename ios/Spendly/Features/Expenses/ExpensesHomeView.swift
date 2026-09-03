@@ -105,7 +105,7 @@ private struct ExpensesContentView: View {
                 }
                 .padding(.horizontal, ExpensesLayout.horizontalPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.gray.ignoresSafeArea(edges: .top))
+                .background(AppColor.white.ignoresSafeArea(edges: .top))
 
                 DailySummary(selectedDate: selectedDate)
                     .padding(.horizontal, ExpensesLayout.horizontalPadding)
@@ -490,7 +490,7 @@ private struct WeekdayHeader: View {
 
                 Text(day.weekday)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppColor.black)
+                    .foregroundStyle(day.isWeekend ? AppColor.weekend : AppColor.black)
                     .frame(width: 32)
                     .transaction { transaction in
                         transaction.animation = nil
@@ -646,6 +646,9 @@ private extension ExpenseDay {
     func foregroundColor(isSelected: Bool, isToday: Bool) -> Color {
         if isSelected {
             return AppColor.white
+        }
+        if isWeekend {
+            return AppColor.weekend
         }
         if isToday {
             return AppColor.blue

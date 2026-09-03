@@ -33,7 +33,8 @@ struct ExpenseWeek {
                 weekday: ExpenseWeek.weekdayTitles[offset],
                 day: day,
                 date: calendar.startOfDay(for: dayDate),
-                isToday: calendar.isDate(dayDate, inSameDayAs: today)
+                isToday: calendar.isDate(dayDate, inSameDayAs: today),
+                isWeekend: offset >= 5
             )
         }
 
@@ -58,6 +59,7 @@ struct ExpenseDay: Identifiable {
     let day: Int
     let date: Date
     let isToday: Bool
+    let isWeekend: Bool
 
     var id: Date { date }
 }

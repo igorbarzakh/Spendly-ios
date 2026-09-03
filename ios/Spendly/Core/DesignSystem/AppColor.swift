@@ -6,6 +6,7 @@ enum AppColor {
     static let gray = Color(hex: 0xF5F5F7)
     static let black = Color(hex: 0x1D1D1F)
     static let muted = Color(hex: 0x8A8A8D)
+    static let weekend = Color(hex: 0x8B8B8B)
     static let placeholder = Color(hex: 0xC5C5C6)
     static let border = Color.black.opacity(0.08)
     static let danger = Color.red

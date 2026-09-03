@@ -96,6 +96,15 @@ final class ExpenseWeekTests: XCTestCase {
         XCTAssertFalse(week.days[1].isToday)
     }
 
+    func testIdentifiesWeekendDays() throws {
+        let calendar = makeCalendar()
+        let today = try makeDate(year: 2026, month: 8, day: 19, calendar: calendar)
+
+        let week = ExpenseWeek.current(containing: today, calendar: calendar)
+
+        XCTAssertEqual(week.days.map(\.isWeekend), [false, false, false, false, false, true, true])
+    }
+
     func testFormatsMonthTitlesInRussian() throws {
         let calendar = makeCalendar()
         let date = try makeDate(year: 2026, month: 9, day: 2, calendar: calendar)
