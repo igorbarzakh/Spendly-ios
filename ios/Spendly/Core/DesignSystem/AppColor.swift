@@ -10,6 +10,15 @@ enum AppColor {
     static let placeholder = Color(hex: 0xC5C5C6)
     static let border = Color.black.opacity(0.08)
     static let danger = Color.red
+
+    static let dashboardBackground = Color(uiColor: .systemGroupedBackground)
+    static let dashboardSurface = Color(uiColor: .systemBackground)
+    static let dashboardPrimaryText = Color(uiColor: .label)
+    static let dashboardSecondaryText = Color(uiColor: .secondaryLabel)
+    static let dashboardSeparator = Color(uiColor: .separator)
+    static let dashboardProgressTrack = Color(uiColor: .systemGray5)
+    static let dashboardAccent = Color(hex: 0x615FFF)
+    static let dashboardAccentSoft = dashboardAccent.opacity(0.12)
 }
 
 private extension Color {
