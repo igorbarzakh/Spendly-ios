@@ -1,8 +1,11 @@
 package purchases
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"math"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,7 +29,10 @@ var (
 	ErrNotFound            = errors.New("purchase not found")
 	ErrVersionConflict     = errors.New("purchase version conflict")
 	ErrIdempotencyConflict = errors.New("idempotency conflict")
+	ErrInvalidCursor       = errors.New("invalid purchase cursor")
 )
+
+var canonicalUUID = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 type ItemDraft struct {
 	ID             string `json:"id"`
@@ -75,6 +81,54 @@ type Purchase struct {
 }
 
 type Scope struct{ GroupID *string }
+
+type ListOptions struct {
+	From   time.Time
+	To     time.Time
+	Cursor string
+	Limit  int
+}
+
+type ListCursor struct {
+	SpentAt time.Time `json:"spent_at"`
+	ID      string    `json:"id"`
+}
+
+type ListQuery struct {
+	From  time.Time
+	To    time.Time
+	After *ListCursor
+	Limit int
+}
+
+type Page struct {
+	Purchases  []Purchase `json:"purchases"`
+	NextCursor string     `json:"next_cursor,omitempty"`
+	HasMore    bool       `json:"has_more"`
+}
+
+func EncodeListCursor(cursor ListCursor) (string, error) {
+	if cursor.SpentAt.IsZero() || !canonicalUUID.MatchString(cursor.ID) {
+		return "", ErrInvalidCursor
+	}
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return "", ErrInvalidCursor
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func DecodeListCursor(raw string) (ListCursor, error) {
+	payload, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return ListCursor{}, ErrInvalidCursor
+	}
+	var cursor ListCursor
+	if json.Unmarshal(payload, &cursor) != nil || cursor.SpentAt.IsZero() || !canonicalUUID.MatchString(cursor.ID) {
+		return ListCursor{}, ErrInvalidCursor
+	}
+	return cursor, nil
+}
 
 func (draft Draft) TotalMinor() (int64, error) {
 	if draft.Kind == KindQuick {
@@ -129,8 +183,8 @@ func (draft Draft) DiscountAmountMinor(itemsSubtotal int64) (int64, error) {
 }
 
 func (item ItemDraft) TotalMinor() (int64, error) {
-	if item.Quantity == 0 && item.UnitPriceMinor == 0 {
-		if item.AmountMinor <= 0 {
+	if item.UnitPriceMinor == 0 {
+		if item.Quantity < 0 || item.AmountMinor <= 0 {
 			return 0, ErrInvalidPurchase
 		}
 		return item.AmountMinor, nil

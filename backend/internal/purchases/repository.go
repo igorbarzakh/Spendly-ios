@@ -84,16 +84,28 @@ func (repository *PostgresRepository) Create(ctx context.Context, owner auth.Use
 	return purchase, nil
 }
 
-func (repository *PostgresRepository) List(ctx context.Context, user auth.UserID, scope Scope, from, to time.Time) ([]Purchase, error) {
-	query := `select p.id,p.group_id,p.kind,p.merchant,coalesce(p.category,''),coalesce(p.amount_minor,0),p.currency_code,p.spent_at,p.local_date::text,p.time_zone,p.delivery_fee_minor,p.discount_type,p.discount_value,p.owner_id,p.version,p.created_at,p.updated_at,p.deleted_at from purchases p where p.deleted_at is null and p.spent_at >= $2 and p.spent_at < $3 and `
-	args := []any{user, from, to}
+func (repository *PostgresRepository) List(ctx context.Context, user auth.UserID, scope Scope, listQuery ListQuery) ([]Purchase, error) {
+	var from, to, cursorSpentAt, cursorID any
+	if !listQuery.From.IsZero() {
+		from, to = listQuery.From, listQuery.To
+	}
+	if listQuery.After != nil {
+		cursorSpentAt, cursorID = listQuery.After.SpentAt, listQuery.After.ID
+	}
+	query := `select p.id,p.group_id,p.kind,p.merchant,coalesce(p.category,''),coalesce(p.amount_minor,0),p.currency_code,p.spent_at,p.local_date::text,p.time_zone,p.delivery_fee_minor,p.discount_type,p.discount_value,p.owner_id,p.version,p.created_at,p.updated_at,p.deleted_at
+		from purchases p
+		where p.deleted_at is null
+		and ($2::timestamptz is null or p.spent_at >= $2)
+		and ($3::timestamptz is null or p.spent_at < $3)
+		and ($4::timestamptz is null or (p.spent_at,p.id) < ($4,$5::uuid)) and `
+	args := []any{user, from, to, cursorSpentAt, cursorID, listQuery.Limit}
 	if scope.GroupID == nil {
 		query += `p.owner_id=$1`
 	} else {
-		query += `p.group_id=$4 and exists(select 1 from group_members where group_id=$4 and user_id=$1)`
+		query += `p.group_id=$7 and exists(select 1 from group_members where group_id=$7 and user_id=$1)`
 		args = append(args, *scope.GroupID)
 	}
-	query += ` order by p.spent_at desc,p.id`
+	query += ` order by p.spent_at desc,p.id desc limit nullif($6,0)`
 	rows, err := repository.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -110,26 +122,48 @@ func (repository *PostgresRepository) List(ctx context.Context, user auth.UserID
 		if discountTypeValue != nil && discountAmountValue != nil {
 			p.Discount = &Discount{Type: *discountTypeValue, Value: *discountAmountValue}
 		}
-		if p.Kind == KindDetailed {
-			itemRows, e := repository.pool.Query(ctx, `select id,position,name,category,quantity,unit_price_minor,amount_minor,created_at,updated_at from purchase_items where purchase_id=$1 order by position`, p.ID)
-			if e != nil {
-				return nil, e
-			}
-			for itemRows.Next() {
-				var item ItemDraft
-				var createdAt, updatedAt time.Time
-				if e = itemRows.Scan(&item.ID, &item.Position, &item.Name, &item.Category, &item.Quantity, &item.UnitPriceMinor, &item.AmountMinor, &createdAt, &updatedAt); e != nil {
-					itemRows.Close()
-					return nil, e
-				}
-				p.Items = append(p.Items, item)
-			}
-			itemRows.Close()
-		}
-		p.TotalAmountMinor, _ = p.TotalMinor()
 		result = append(result, p)
 	}
-	return result, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if err = repository.loadListItems(ctx, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repository *PostgresRepository) loadListItems(ctx context.Context, values []Purchase) error {
+	ids := make([]string, 0, len(values))
+	byID := make(map[string]int, len(values))
+	for index := range values {
+		if values[index].Kind == KindDetailed {
+			ids = append(ids, values[index].ID)
+			byID[values[index].ID] = index
+		}
+	}
+	if len(ids) > 0 {
+		rows, err := repository.pool.Query(ctx, `select purchase_id,id,position,name,category,quantity,unit_price_minor,amount_minor from purchase_items where purchase_id=any($1::uuid[]) order by purchase_id,position`, ids)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var purchaseID string
+			var item ItemDraft
+			if err = rows.Scan(&purchaseID, &item.ID, &item.Position, &item.Name, &item.Category, &item.Quantity, &item.UnitPriceMinor, &item.AmountMinor); err != nil {
+				return err
+			}
+			values[byID[purchaseID]].Items = append(values[byID[purchaseID]].Items, item)
+		}
+		if err = rows.Err(); err != nil {
+			return err
+		}
+	}
+	for index := range values {
+		values[index].TotalAmountMinor, _ = values[index].TotalMinor()
+	}
+	return nil
 }
 
 func (repository *PostgresRepository) Update(ctx context.Context, user auth.UserID, purchase Purchase, expected int64) (Purchase, error) {
@@ -252,6 +286,9 @@ func normalizeDraftTotals(draft Draft) Draft {
 	for index, item := range draft.Items {
 		if amount, err := item.TotalMinor(); err == nil {
 			draft.Items[index].AmountMinor = amount
+			if item.Quantity == 0 && item.UnitPriceMinor == 0 {
+				draft.Items[index].Quantity = 1
+			}
 		}
 	}
 	return draft

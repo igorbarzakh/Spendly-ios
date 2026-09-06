@@ -39,11 +39,21 @@ paths:
       operationId: listPurchases
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
-        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - name: limit
+          in: query
+          description: Page size up to 100. Defaults to 50 when no date range is supplied; date-range requests without a limit retain the complete interval response.
+          schema: { type: integer, minimum: 1, maximum: 100 }
         - { name: group_id, in: query, schema: { type: string, format: uuid } }
       responses:
-        '200': { description: Purchases }
+        '200':
+          description: Purchases ordered by spent_at and id descending
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PurchasePage' }
+        '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
     post:
       operationId: createPurchase
@@ -205,6 +215,15 @@ components:
       properties:
         purchase: { $ref: '#/components/schemas/Purchase' }
         deleted: { type: boolean }
+    PurchasePage:
+      type: object
+      required: [purchases, has_more]
+      properties:
+        purchases:
+          type: array
+          items: { $ref: '#/components/schemas/Purchase' }
+        next_cursor: { type: string }
+        has_more: { type: boolean }
     Purchase:
       type: object
       required: [id, kind, merchant, currency_code, spent_at, local_date, time_zone, owner_id, version, total_amount_minor, created_at, updated_at]

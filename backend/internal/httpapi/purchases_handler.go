@@ -3,16 +3,17 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"github.com/igorbarzakh/spendly-ios/backend/internal/auth"
-	"github.com/igorbarzakh/spendly-ios/backend/internal/purchases"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/igorbarzakh/spendly-ios/backend/internal/auth"
+	"github.com/igorbarzakh/spendly-ios/backend/internal/purchases"
 )
 
 type PurchaseUseCases interface {
 	Create(context.Context, auth.UserID, purchases.Draft, string) (purchases.Purchase, error)
-	List(context.Context, auth.UserID, purchases.Scope, time.Time, time.Time) ([]purchases.Purchase, error)
+	List(context.Context, auth.UserID, purchases.Scope, purchases.ListOptions) (purchases.Page, error)
 	Update(context.Context, auth.UserID, purchases.Purchase, int64) (purchases.Purchase, error)
 	Delete(context.Context, auth.UserID, string, int64) error
 }
@@ -40,19 +41,21 @@ func (h *purchasesHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 func (h *purchasesHandler) list(w http.ResponseWriter, r *http.Request) {
 	claims, _ := accessClaims(r.Context())
-	from, e1 := time.Parse(time.RFC3339, r.URL.Query().Get("from"))
-	to, e2 := time.Parse(time.RFC3339, r.URL.Query().Get("to"))
-	scope := purchaseScope(r)
-	if e1 != nil || e2 != nil {
+	options, err := purchaseListOptions(r)
+	if err != nil {
 		writeAPIError(w, 400, "invalid_request", "Invalid request")
 		return
 	}
-	values, err := h.service.List(r.Context(), claims.UserID, scope, from, to)
+	page, err := h.service.List(r.Context(), claims.UserID, purchaseScope(r), options)
 	if err != nil {
+		if errors.Is(err, purchases.ErrInvalidCursor) {
+			writeAPIError(w, 400, "invalid_cursor", "Invalid purchase cursor")
+			return
+		}
 		handlePurchaseError(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"purchases": values})
+	writeJSON(w, 200, page)
 }
 
 func purchaseScope(request *http.Request) purchases.Scope {
@@ -61,6 +64,28 @@ func purchaseScope(request *http.Request) purchases.Scope {
 		scope.GroupID = &group
 	}
 	return scope
+}
+
+func purchaseListOptions(request *http.Request) (purchases.ListOptions, error) {
+	query := request.URL.Query()
+	options := purchases.ListOptions{Cursor: query.Get("cursor")}
+	fromValue, toValue := query.Get("from"), query.Get("to")
+	if fromValue != "" || toValue != "" {
+		from, fromError := time.Parse(time.RFC3339, fromValue)
+		to, toError := time.Parse(time.RFC3339, toValue)
+		if fromError != nil || toError != nil {
+			return purchases.ListOptions{}, purchases.ErrInvalidPurchase
+		}
+		options.From, options.To = from, to
+	}
+	if rawLimit := query.Get("limit"); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil || limit <= 0 {
+			return purchases.ListOptions{}, purchases.ErrInvalidPurchase
+		}
+		options.Limit = limit
+	}
+	return options, nil
 }
 func (h *purchasesHandler) update(w http.ResponseWriter, r *http.Request) {
 	claims, _ := accessClaims(r.Context())
