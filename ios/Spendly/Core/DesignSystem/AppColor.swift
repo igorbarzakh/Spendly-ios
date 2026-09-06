@@ -21,7 +21,7 @@ enum AppColor {
     static let dashboardAccentSoft = dashboardAccent.opacity(0.12)
 }
 
-private extension Color {
+extension Color {
     init(hex: UInt32, opacity: Double = 1) {
         let red = Double((hex >> 16) & 0xFF) / 255
         let green = Double((hex >> 8) & 0xFF) / 255

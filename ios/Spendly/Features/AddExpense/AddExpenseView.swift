@@ -20,12 +20,12 @@ enum AddExpenseKeyboardLayout {
 struct AddExpenseView: View {
     private enum Layout {
         static let sectionSpacing: CGFloat = 16
-        static let fieldSpacing: CGFloat = 10
-    }
-
-    private enum ItemField: Hashable {
-        case name
-        case price
+        static let fieldSpacing: CGFloat = 8
+        static let horizontalPadding: CGFloat = 18
+        static let fieldHeight: CGFloat = 56
+        static let fieldCornerRadius: CGFloat = 16
+        static let amountFieldHeight: CGFloat = 68
+        static let amountCornerRadius: CGFloat = 16
     }
 
     let scope: AddExpenseCategoryScope
@@ -33,32 +33,23 @@ struct AddExpenseView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft = AddExpenseDraft()
-    @State private var itemFormDraft: CartItemFormDraft?
-    @State private var didAttemptItemSave = false
     @State private var isDatePickerPresented = false
     @State private var isCategoryPickerPresented = false
     @State private var keyboardHeight: CGFloat = 0
     @FocusState private var isMerchantFocused: Bool
-    @FocusState private var focusedItemField: ItemField?
-    @FocusState private var isDiscountFocused: Bool
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
                     headerSection
-                    entryModeSection
+                        .padding(.bottom, 14)
                     detailsSection
 
-                    switch draft.entryMode {
-                    case .cart:
-                        cartSection
-                    case .amountOnly:
-                        amountSection
-                    }
+                    amountSection
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
+                .padding(.horizontal, Layout.horizontalPadding)
+                .padding(.top, 20)
                 .padding(.bottom, AddExpenseKeyboardLayout.bottomContentPadding(keyboardHeight: keyboardHeight))
             }
             .scrollDismissesKeyboard(.interactively)
@@ -68,7 +59,7 @@ struct AddExpenseView: View {
                         dismissKeyboard()
                     }
             )
-            .background(AppColor.gray)
+            .background(AppColor.dashboardBackground)
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $isDatePickerPresented) {
                 NavigationStack {
@@ -99,9 +90,6 @@ struct AddExpenseView: View {
             }
             .sheet(isPresented: $isCategoryPickerPresented) {
                 CategorySelectionSheet(selectedCategory: $draft.selectedCategory)
-            }
-            .onChange(of: draft.entryMode) { _, _ in
-                cancelItemEditing()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
                 keyboardHeight = Self.keyboardHeight(from: notification)
@@ -134,22 +122,14 @@ struct AddExpenseView: View {
             Button(action: save) {
                 actionCircleButton(
                     systemName: "checkmark",
-                    iconColor: canSaveExpense ? AppColor.white : AppColor.muted,
-                    fillColor: canSaveExpense ? AppColor.blue : AppColor.gray,
-                    isGlassTinted: canSaveExpense
+                    iconColor: draft.canSave ? AppColor.white : AppColor.muted,
+                    fillColor: draft.canSave ? AppColor.blue : AppColor.gray,
+                    isGlassTinted: draft.canSave
                 )
             }
             .buttonStyle(GlassCircleButtonStyle())
-            .disabled(!canSaveExpense)
+            .disabled(!draft.canSave)
         }
-    }
-
-    private var entryModeSection: some View {
-        Picker("Режим траты", selection: $draft.entryMode) {
-            Text("Один товар").tag(AddExpenseEntryMode.amountOnly)
-            Text("Корзина").tag(AddExpenseEntryMode.cart)
-        }
-        .pickerStyle(.segmented)
     }
 
     private var amountSection: some View {
@@ -159,22 +139,24 @@ struct AddExpenseView: View {
                 .foregroundStyle(AppColor.black)
 
             MoneyAmountTextField(text: $draft.amountText)
-                .padding(.horizontal, 18)
-                .frame(height: 72)
-                .whiteSurface(cornerRadius: 18)
+                .padding(.horizontal, 16)
+                .frame(height: Layout.amountFieldHeight)
+                .whiteSurface(cornerRadius: Layout.amountCornerRadius)
                 .contentShape(Rectangle())
         }
     }
 
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
-            formField(title: "Магазин или название", onTap: {
+            formField(title: "Название", onTap: {
                 isMerchantFocused = true
             }) {
                 TextField(
                     "",
                     text: $draft.merchant,
-                    prompt: Text("Например, Ozon Fresh").foregroundStyle(AppColor.placeholder)
+                    prompt: Text("Например, Ozon Fresh")
+                        .font(.callout)
+                        .foregroundStyle(AppColor.placeholder)
                 )
                     .textInputAutocapitalization(.words)
                     .focused($isMerchantFocused)
@@ -196,8 +178,8 @@ struct AddExpenseView: View {
                             .foregroundStyle(AppColor.blue)
 
                         Text(draft.spentAt.formatted(.dateTime.day().month(.abbreviated).year()))
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(AppColor.black)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(AppColor.dashboardPrimaryText)
 
                         Spacer()
 
@@ -205,9 +187,9 @@ struct AddExpenseView: View {
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(AppColor.muted)
                     }
-                    .padding(.horizontal, 18)
-                    .frame(height: 56)
-                    .whiteSurface(cornerRadius: 16)
+                    .padding(.horizontal, 16)
+                    .frame(height: Layout.fieldHeight)
+                    .whiteSurface(cornerRadius: Layout.fieldCornerRadius)
                 }
                 .buttonStyle(ContrastRowButtonStyle())
             }
@@ -226,8 +208,9 @@ struct AddExpenseView: View {
             } label: {
                 HStack {
                     Text(draft.selectedCategory?.name ?? "Выберите категорию")
+                        .font(draft.selectedCategory == nil ? .callout : .subheadline)
                         .foregroundStyle(
-                            draft.selectedCategory == nil ? AppColor.placeholder : AppColor.black
+                            draft.selectedCategory == nil ? AppColor.placeholder : AppColor.dashboardPrimaryText
                         )
                         .contentTransition(.identity)
 
@@ -237,9 +220,9 @@ struct AddExpenseView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AppColor.muted)
                 }
-                .padding(.horizontal, 18)
-                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                .whiteSurface(cornerRadius: 16)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: Layout.fieldHeight, alignment: .leading)
+                .whiteSurface(cornerRadius: Layout.fieldCornerRadius)
                 .contentShape(Rectangle())
                 .transaction(value: draft.selectedCategory) { transaction in
                     transaction.animation = nil
@@ -248,390 +231,6 @@ struct AddExpenseView: View {
             }
             .buttonStyle(.plain)
         }
-    }
-
-    private var cartSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Товары")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(AppColor.black)
-
-            VStack(spacing: 8) {
-                ForEach(draft.items) { item in
-                    if itemFormDraft?.id == item.id {
-                        itemEditor(for: itemFormDraft ?? CartItemFormDraft(item: item))
-                    } else {
-                        itemRow(item)
-                    }
-                }
-
-                if let itemFormDraft, !itemFormDraft.isExistingItem {
-                    itemEditor(for: itemFormDraft)
-                }
-
-                if itemFormDraft == nil {
-                    addItemButton
-                }
-            }
-
-            additionalControls
-            cartSummary
-        }
-    }
-
-    private func itemRow(_ item: AddExpenseItemDraft) -> some View {
-        HStack(spacing: 10) {
-            Button {
-                beginEditing(item)
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 10) {
-                        Text(item.displayName)
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(AppColor.black)
-                            .lineLimit(1)
-
-                        Spacer(minLength: 8)
-
-                        Text(MoneyFormatter.rublesMinorUnits(item.totalMinorUnits ?? 0))
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(AppColor.black)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-
-                    Text("\(item.quantity) × \(MoneyFormatter.rublesMinorUnits(item.unitPriceMinorUnits ?? 0))")
-                        .font(.subheadline)
-                        .foregroundStyle(AppColor.muted)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(itemFormDraft != nil)
-
-            Button(role: .destructive) {
-                draft.removeItem(id: item.id)
-            } label: {
-                Image(systemName: "trash")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.red)
-                    .frame(width: 36, height: 44)
-            }
-            .buttonStyle(.plain)
-            .disabled(itemFormDraft != nil)
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
-        .frame(minHeight: 68)
-        .whiteSurface(cornerRadius: 16)
-    }
-
-    private var addItemButton: some View {
-        Button {
-            itemFormDraft = CartItemFormDraft()
-            didAttemptItemSave = false
-            focusedItemField = .name
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "plus")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(AppColor.blue)
-
-                Text("Добавить товар")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(AppColor.black)
-
-                Spacer()
-            }
-            .padding(.horizontal, 18)
-            .frame(height: 56)
-            .whiteSurface(cornerRadius: 16)
-        }
-        .buttonStyle(ContrastRowButtonStyle())
-    }
-
-    private func itemEditor(for form: CartItemFormDraft) -> some View {
-        let formBinding = Binding(
-            get: { itemFormDraft ?? form },
-            set: { itemFormDraft = $0 }
-        )
-        let priceMinorUnits = MoneyFormatter.minorUnits(from: form.unitPriceText)
-
-        return VStack(alignment: .leading, spacing: 14) {
-            Text(form.isExistingItem ? "Редактирование товара" : "Новый товар")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(AppColor.black)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Название")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(AppColor.muted)
-
-                TextField(
-                    "",
-                    text: formBinding.name,
-                    prompt: Text("Например, Молоко").foregroundStyle(AppColor.placeholder)
-                )
-                .textInputAutocapitalization(.words)
-                .submitLabel(.next)
-                .focused($focusedItemField, equals: .name)
-                .onSubmit {
-                    focusedItemField = .price
-                }
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                .background(AppColor.gray, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    focusedItemField = .name
-                }
-
-                if didAttemptItemSave && form.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    validationText("Введите название товара")
-                }
-            }
-
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Количество")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(AppColor.muted)
-
-                    HStack(spacing: 6) {
-                        quantityButton(systemName: "minus") {
-                            itemFormDraft?.quantity = max(1, form.quantity - 1)
-                        }
-                        .disabled(form.quantity <= 1)
-
-                        Text("\(form.quantity)")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(AppColor.black)
-                            .frame(minWidth: 28)
-
-                        quantityButton(systemName: "plus") {
-                            itemFormDraft?.quantity = min(999, form.quantity + 1)
-                        }
-                        .disabled(form.quantity >= 999)
-                    }
-                    .padding(.horizontal, 8)
-                    .frame(height: 48)
-                    .background(AppColor.gray, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                    if didAttemptItemSave && form.quantity <= 0 {
-                        validationText("Укажите количество")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Цена за единицу")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(AppColor.muted)
-                        .lineLimit(1)
-
-                    TextField(
-                        "",
-                        text: formBinding.unitPriceText,
-                        prompt: Text("0").foregroundStyle(AppColor.placeholder)
-                    )
-                        .keyboardType(.decimalPad)
-                        .focused($focusedItemField, equals: .price)
-                        .multilineTextAlignment(.leading)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                        .background(AppColor.gray, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .contentShape(Rectangle())
-                        .onChange(of: formBinding.unitPriceText.wrappedValue) { _, newValue in
-                            let normalized = MoneyFormatter.inputText(from: newValue)
-                            if normalized != newValue {
-                                formBinding.unitPriceText.wrappedValue = normalized
-                            }
-                        }
-                        .onTapGesture {
-                            focusedItemField = .price
-                        }
-
-                    if didAttemptItemSave && (priceMinorUnits == nil || priceMinorUnits == 0) {
-                        validationText("Введите цену больше нуля")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            HStack(spacing: 10) {
-                Button("Отмена", action: cancelItemEditing)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(AppColor.black)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-                    .background(AppColor.gray, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                Button("Добавить") {
-                    confirmItemEditing()
-                }
-                .font(.body.weight(.semibold))
-                .foregroundStyle(AppColor.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 46)
-                .background(AppColor.blue, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(16)
-        .whiteSurface(cornerRadius: 16)
-        .onAppear {
-            focusedItemField = .name
-        }
-    }
-
-    private func quantityButton(systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(AppColor.blue)
-                .frame(width: 30, height: 30)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func validationText(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.red)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var additionalControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Дополнительно")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(AppColor.black)
-
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Text("Доставка")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(AppColor.black)
-
-                    Spacer(minLength: 8)
-
-                    MoneyAmountTextField(
-                        text: $draft.deliveryFeeText,
-                        fontSize: 17,
-                        fontWeight: .medium
-                    )
-                        .padding(.horizontal, 12)
-                        .frame(width: 108, height: 42)
-                        .background(AppColor.gray, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .contentShape(Rectangle())
-                }
-                .padding(.horizontal, 16)
-                .frame(minHeight: 58)
-                .contentShape(Rectangle())
-
-                Divider()
-                    .overlay(AppColor.border)
-                    .padding(.leading, 16)
-
-                HStack(spacing: 8) {
-                    Text("Скидка")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(AppColor.black)
-
-                    Spacer(minLength: 4)
-
-                    TextField("0", text: $draft.discountText)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(AppColor.black)
-                        .padding(.horizontal, 10)
-                        .frame(width: 72, height: 42)
-                        .background(AppColor.gray, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .focused($isDiscountFocused)
-                        .onChange(of: draft.discountText) { _, _ in
-                            draft.normalizeDiscountText()
-                        }
-
-                    Picker("Тип скидки", selection: $draft.discountType) {
-                        Text("₽").tag(AddExpenseDiscountType.fixed)
-                        Text("%").tag(AddExpenseDiscountType.percentage)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 96)
-                    .onChange(of: draft.discountType) { _, _ in
-                        draft.normalizeDiscountText()
-                    }
-                }
-                .padding(.horizontal, 16)
-                .frame(minHeight: 58)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    isDiscountFocused = true
-                }
-            }
-            .whiteSurface(cornerRadius: 16)
-
-            if draft.isFixedDiscountTooLarge {
-                validationText("Скидка не может быть больше суммы товаров и доставки")
-            }
-        }
-    }
-
-    private var cartSummary: some View {
-        VStack(spacing: 8) {
-            summaryRow("Товары", draft.itemsSubtotalMinorUnits ?? 0)
-
-            if (draft.deliveryFeeMinorUnits ?? 0) > 0 {
-                summaryRow("Доставка", draft.deliveryFeeMinorUnits ?? 0)
-            }
-
-            if (draft.discountMinorUnits ?? 0) > 0 {
-                summaryRow("Скидка", -(draft.discountMinorUnits ?? 0))
-            }
-        }
-        .padding(16)
-        .whiteSurface(cornerRadius: 16)
-    }
-
-    private func summaryRow(_ title: String, _ value: Int64) -> some View {
-        HStack(spacing: 12) {
-            Text(title)
-            Spacer()
-            Text(MoneyFormatter.rublesMinorUnits(value))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .font(.body.weight(.medium))
-        .foregroundStyle(AppColor.black)
-    }
-
-    private var canSaveExpense: Bool {
-        draft.isSaveEnabled(hasOpenItemEditor: itemFormDraft != nil)
-    }
-
-    private func beginEditing(_ item: AddExpenseItemDraft) {
-        itemFormDraft = CartItemFormDraft(item: item)
-        didAttemptItemSave = false
-        focusedItemField = .name
-    }
-
-    private func confirmItemEditing() {
-        guard let form = itemFormDraft else { return }
-        didAttemptItemSave = true
-        guard form.canSave else { return }
-
-        draft.upsertItem(form.item)
-        cancelItemEditing()
-    }
-
-    private func cancelItemEditing() {
-        focusedItemField = nil
-        didAttemptItemSave = false
-        itemFormDraft = nil
-        dismissKeyboard()
     }
 
     private func formField<Content: View>(
@@ -645,12 +244,12 @@ struct AddExpenseView: View {
                 .foregroundStyle(AppColor.black)
 
             content()
-                .font(.body)
-                .foregroundStyle(AppColor.black)
-                .padding(.horizontal, 18)
-                .frame(height: 56)
-                .whiteSurface(cornerRadius: 16)
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .font(.subheadline)
+                .foregroundStyle(AppColor.dashboardPrimaryText)
+                .padding(.horizontal, 16)
+                .frame(height: Layout.fieldHeight)
+                .whiteSurface(cornerRadius: Layout.fieldCornerRadius)
+                .contentShape(RoundedRectangle(cornerRadius: Layout.fieldCornerRadius, style: .continuous))
                 .onTapGesture {
                     onTap?()
                 }
@@ -658,7 +257,7 @@ struct AddExpenseView: View {
     }
 
     private func save() {
-        guard canSaveExpense else { return }
+        guard draft.canSave else { return }
         onSave(draft)
         dismiss()
     }
@@ -716,19 +315,26 @@ private struct CategorySelectionSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(AppColor.white)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(AppColor.dashboardSurface)
 
-                    TextField("Поиск или новая категория", text: $searchText)
+                    TextField(
+                        "",
+                        text: $searchText,
+                        prompt: Text("Поиск или новая категория")
+                            .font(.callout)
+                            .foregroundStyle(AppColor.placeholder)
+                    )
+                        .font(.subheadline)
                         .textInputAutocapitalization(.words)
                         .submitLabel(validatedNewCategoryName == nil ? .search : .done)
                         .onSubmit(createCategoryIfPossible)
                         .focused($isSearchFocused)
-                        .foregroundStyle(AppColor.black)
+                        .foregroundStyle(AppColor.dashboardPrimaryText)
                         .padding(.horizontal, 16)
                 }
-                .frame(height: 52)
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(height: 56)
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .onTapGesture {
                     isSearchFocused = true
                 }
@@ -740,23 +346,32 @@ private struct CategorySelectionSheet: View {
 
                             if !filteredCategories.isEmpty {
                                 Divider()
-                                    .overlay(AppColor.border)
-                                    .padding(.leading, 16)
+                                    .overlay(AppColor.dashboardSeparator.opacity(0.45))
+                                    .padding(.leading, 54)
                             }
                         }
 
                         ForEach(filteredCategories) { category in
                             if category.id != filteredCategories.first?.id {
                                 Divider()
-                                    .overlay(AppColor.border)
-                                    .padding(.leading, 16)
+                                    .overlay(AppColor.dashboardSeparator.opacity(0.45))
+                                    .padding(.leading, 54)
                             }
 
                             categoryButton(category)
                         }
                     }
-                    .whiteSurface(cornerRadius: 16)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        AppColor.dashboardSurface,
+                        in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    )
+                    .shadow(color: Color.black.opacity(0.055), radius: 24, x: 0, y: 10)
+                    .padding(.bottom, 32)
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .ignoresSafeArea(edges: .bottom)
                 .scrollDismissesKeyboard(.interactively)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 1)
@@ -765,7 +380,8 @@ private struct CategorySelectionSheet: View {
                         }
                 )
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
             .background(AppColor.gray)
             .navigationTitle("Категория")
             .navigationBarTitleDisplayMode(.inline)
@@ -790,14 +406,24 @@ private struct CategorySelectionSheet: View {
             closeSheet()
         } label: {
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
+                Image(systemName: category.symbolName)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(category.tint)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        category.tint.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
                     Text(category.name)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(AppColor.black)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.dashboardPrimaryText)
 
                     Text(category.kind.title)
-                        .font(.caption)
-                        .foregroundStyle(AppColor.muted)
+                        .font(.footnote)
+                        .foregroundStyle(AppColor.dashboardSecondaryText)
                 }
 
                 Spacer()
@@ -808,8 +434,7 @@ private struct CategorySelectionSheet: View {
                         .foregroundStyle(AppColor.blue)
                 }
             }
-            .padding(.horizontal, 16)
-            .frame(height: 58)
+            .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -821,17 +446,21 @@ private struct CategorySelectionSheet: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "plus")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(AppColor.blue)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        AppColor.blue.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
 
                 Text("Create \"\(name)\"")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(AppColor.black)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.dashboardPrimaryText)
 
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .frame(height: 58)
+            .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -888,7 +517,7 @@ private extension View {
     func whiteSurface(cornerRadius: CGFloat) -> some View {
         background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(AppColor.white)
+                .fill(AppColor.dashboardSurface)
         )
     }
 
@@ -984,93 +613,14 @@ private struct MoneyAmountTextField: UIViewRepresentable {
     }
 }
 
-struct CartItemFormDraft: Identifiable, Equatable {
-    let id: UUID
-    var name: String
-    var quantity: Int64
-    var unitPriceText: String
-    let isExistingItem: Bool
-
-    init(item: AddExpenseItemDraft? = nil) {
-        if let item {
-            id = item.id
-            name = item.name
-            quantity = item.quantity
-            unitPriceText = item.unitPriceText
-            isExistingItem = true
-        } else {
-            id = UUID()
-            name = ""
-            quantity = 1
-            unitPriceText = ""
-            isExistingItem = false
-        }
-    }
-
-    var canSave: Bool {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              quantity > 0,
-              let priceMinorUnits = MoneyFormatter.minorUnits(from: unitPriceText)
-        else {
-            return false
-        }
-        return priceMinorUnits > 0
-    }
-
-    var item: AddExpenseItemDraft {
-        AddExpenseItemDraft(id: id, name: name, quantity: quantity, unitPriceText: unitPriceText)
-    }
-}
-
-struct AddExpenseItemDraft: Identifiable, Equatable, Hashable {
-    let id: UUID
-    var name: String
-    var quantity: Int64 = 1
-    var unitPriceText: String
-
-    var displayName: String {
-        name.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var unitPriceMinorUnits: Int64? {
-        MoneyFormatter.minorUnits(from: unitPriceText).map(Int64.init)
-    }
-
-    var totalMinorUnits: Int64? {
-        guard let unitPriceMinorUnits, quantity > 0 else { return nil }
-        let result = unitPriceMinorUnits.multipliedReportingOverflow(by: quantity)
-        guard !result.overflow else { return nil }
-        return result.partialValue
-    }
-}
-
-enum AddExpenseDiscountType: Equatable, Hashable {
-    case fixed
-    case percentage
-}
-
-enum AddExpenseEntryMode: Equatable, Hashable {
-    case cart
-    case amountOnly
-}
-
 struct AddExpenseDraft: Equatable {
-    var entryMode: AddExpenseEntryMode = .amountOnly
     var amountText = ""
     var merchant = ""
     var selectedCategory: AddExpenseCategory?
     var spentAt = Date.now
-    var items: [AddExpenseItemDraft] = []
-    var deliveryFeeText = ""
-    var discountText = ""
-    var discountType: AddExpenseDiscountType = .fixed
 
     var canSave: Bool {
         normalizedMinorUnits != nil && !merchantTrimmed.isEmpty && selectedCategory != nil
-    }
-
-    func isSaveEnabled(hasOpenItemEditor: Bool) -> Bool {
-        canSave && !hasOpenItemEditor
     }
 
     var merchantTrimmed: String {
@@ -1088,102 +638,7 @@ struct AddExpenseDraft: Equatable {
     }
 
     var normalizedMinorUnits: Int? {
-        switch entryMode {
-        case .cart:
-            guard hasItems, let totalMinorUnits else { return nil }
-            return Int(exactly: totalMinorUnits)
-        case .amountOnly:
-            return MoneyFormatter.minorUnits(from: amountText)
-        }
-    }
-
-    var hasItems: Bool {
-        !items.isEmpty
-    }
-
-    var itemsSubtotalMinorUnits: Int64? {
-        guard !items.isEmpty else { return 0 }
-        var subtotal: Int64 = 0
-        for item in items {
-            guard let total = item.totalMinorUnits else { return nil }
-            let result = subtotal.addingReportingOverflow(total)
-            guard !result.overflow else { return nil }
-            subtotal = result.partialValue
-        }
-        return subtotal
-    }
-
-    var deliveryFeeMinorUnits: Int64? {
-        guard !deliveryFeeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return 0
-        }
-        return MoneyFormatter.nonNegativeMinorUnits(from: deliveryFeeText).map(Int64.init)
-    }
-
-    var discountMinorUnits: Int64? {
-        guard let subtotal = itemsSubtotalMinorUnits else { return nil }
-        guard !discountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return 0
-        }
-
-        switch discountType {
-        case .fixed:
-            return MoneyFormatter.nonNegativeMinorUnits(from: discountText).map(Int64.init)
-        case .percentage:
-            guard let value = Int64(discountText.filter(\.isNumber)), (0...100).contains(value) else {
-                return nil
-            }
-            return subtotal * value / 100
-        }
-    }
-
-    var totalMinorUnits: Int64? {
-        guard hasItems, let subtotal = itemsSubtotalMinorUnits, let delivery = deliveryFeeMinorUnits, let discount = discountMinorUnits else {
-            return nil
-        }
-        let beforeDiscount = subtotal.addingReportingOverflow(delivery)
-        guard !beforeDiscount.overflow else { return nil }
-        guard discount <= beforeDiscount.partialValue else { return nil }
-        let total = beforeDiscount.partialValue.subtractingReportingOverflow(discount)
-        guard !total.overflow else { return nil }
-        return total.partialValue
-    }
-
-    var isFixedDiscountTooLarge: Bool {
-        guard discountType == .fixed,
-              let subtotal = itemsSubtotalMinorUnits,
-              let delivery = deliveryFeeMinorUnits,
-              let discount = discountMinorUnits
-        else {
-            return false
-        }
-
-        let beforeDiscount = subtotal.addingReportingOverflow(delivery)
-        guard !beforeDiscount.overflow else { return false }
-        return discount > beforeDiscount.partialValue
-    }
-
-    mutating func upsertItem(_ item: AddExpenseItemDraft) {
-        if let index = items.firstIndex(where: { $0.id == item.id }) {
-            items[index] = item
-        } else {
-            items.append(item)
-        }
-    }
-
-    mutating func removeItem(id: UUID) {
-        items.removeAll { $0.id == id }
-    }
-
-    mutating func normalizeDiscountText() {
-        switch discountType {
-        case .fixed:
-            discountText = MoneyFormatter.inputText(from: discountText)
-        case .percentage:
-            let digits = discountText.filter(\.isNumber)
-            let value = min(Int(digits) ?? 0, 100)
-            discountText = digits.isEmpty ? "" : "\(value)"
-        }
+        MoneyFormatter.minorUnits(from: amountText)
     }
 }
 
@@ -1205,6 +660,52 @@ struct AddExpenseCategory: Identifiable, Equatable, Hashable {
     let id: String
     let name: String
     let kind: Kind
+
+    var tintHex: UInt32 {
+        guard kind == .defaultCategory else { return 0x71717A }
+
+        return switch name {
+        case "Продукты": 0x238636
+        case "Транспорт": 0xF97316
+        case "Кафе": 0x8B5E3C
+        case "Развлечения": 0x7C3AED
+        case "Дом": 0xC75C3C
+        case "Здоровье": 0xD92D20
+        case "Подарки": 0xD69E00
+        case "Подписки": 0x008A83
+        case "Одежда": 0x2563EB
+        case "Счета и услуги": 0x596579
+        case "Образование": 0x4F46A5
+        case "Путешествия": 0x0891B2
+        case "Красота": 0xD63384
+        default: 0x71717A
+        }
+    }
+
+    var tint: Color {
+        Color(hex: tintHex)
+    }
+
+    var symbolName: String {
+        guard kind == .defaultCategory else { return "tag.fill" }
+
+        return switch name {
+        case "Продукты": "basket.fill"
+        case "Транспорт": "car.fill"
+        case "Кафе": "cup.and.saucer.fill"
+        case "Развлечения": "theatermasks.fill"
+        case "Дом": "house.fill"
+        case "Здоровье": "heart.fill"
+        case "Подарки": "gift.fill"
+        case "Подписки": "music.note"
+        case "Одежда": "tshirt.fill"
+        case "Счета и услуги": "doc.text.fill"
+        case "Образование": "book.fill"
+        case "Путешествия": "airplane"
+        case "Красота": "sparkles"
+        default: "tag.fill"
+        }
+    }
 
     @MainActor
     static func defaultCategory(name: String) -> AddExpenseCategory {
@@ -1239,7 +740,10 @@ enum AddExpenseCategoryStore {
         "Подарки",
         "Подписки",
         "Одежда",
-        "Другое"
+        "Счета и услуги",
+        "Образование",
+        "Путешествия",
+        "Красота"
     ].map { AddExpenseCategory.defaultCategory(name: $0) }
 
     private static var userCreatedCategories: [AddExpenseCategory] = []

@@ -3,153 +3,57 @@ import XCTest
 
 @MainActor
 final class AddExpenseCategoryStoreTests: XCTestCase {
-    func testAddExpenseDraftDefaultsToAmountOnlyMode() {
-        XCTAssertEqual(AddExpenseDraft().entryMode, .amountOnly)
+    func testDefaultCategoriesHaveCompleteOrderedListAndUniqueColors() {
+        let categories = AddExpenseCategoryStore.defaultCategories
+
+        XCTAssertEqual(categories.map(\.name), [
+            "Продукты", "Транспорт", "Кафе", "Развлечения", "Дом",
+            "Здоровье", "Подарки", "Подписки", "Одежда",
+            "Счета и услуги", "Образование", "Путешествия", "Красота"
+        ])
+        XCTAssertEqual(Set(categories.map(\.tintHex)).count, categories.count)
+        XCTAssertTrue(categories.allSatisfy { !$0.symbolName.isEmpty })
     }
 
-    func testAmountOnlyModeUsesManualAmountEvenWhenCartIsPreserved() {
+    func testUserCreatedCategoryUsesNeutralStyle() {
+        let category = AddExpenseCategory.userCreated(name: "Питомцы")
+
+        XCTAssertEqual(category.symbolName, "tag.fill")
+        XCTAssertEqual(category.tintHex, 0x71717A)
+    }
+
+    func testSingleItemCanSaveWithAmountMerchantAndCategory() {
         var draft = AddExpenseDraft()
-        draft.upsertItem(AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 1, unitPriceText: "95"))
-        draft.amountText = "500"
-        draft.entryMode = .amountOnly
-
-        XCTAssertEqual(draft.normalizedMinorUnits, 50_000)
-        XCTAssertEqual(draft.items.count, 1)
-    }
-
-    func testCartModeDoesNotFallBackToManualAmountWhenCartIsEmpty() {
-        var draft = AddExpenseDraft()
-        draft.amountText = "500"
-        draft.entryMode = .cart
-
-        XCTAssertNil(draft.normalizedMinorUnits)
-    }
-
-    func testSwitchingEntryModesPreservesCartAndManualAmount() {
-        var draft = AddExpenseDraft()
-        let item = AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 1, unitPriceText: "95")
-        draft.upsertItem(item)
-        draft.amountText = "500"
-
-        draft.entryMode = .amountOnly
-        XCTAssertEqual(draft.normalizedMinorUnits, 50_000)
-
-        draft.entryMode = .cart
-        XCTAssertEqual(draft.normalizedMinorUnits, 9_500)
-        XCTAssertEqual(draft.amountText, "500")
-        XCTAssertEqual(draft.items, [item])
-    }
-
-    func testCartItemFormDraftRejectsWhitespaceNameAndNonPositivePrice() {
-        var form = CartItemFormDraft()
-        form.name = "  \n "
-        form.unitPriceText = "95"
-        XCTAssertFalse(form.canSave)
-
-        form.name = "Молоко"
-        form.unitPriceText = "0"
-        XCTAssertFalse(form.canSave)
-
-        form.unitPriceText = "95"
-        form.quantity = 0
-        XCTAssertFalse(form.canSave)
-    }
-
-    func testEditingItemKeepsOriginalUntilConfirmed() {
-        let item = AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 1, unitPriceText: "95")
-        var form = CartItemFormDraft(item: item)
-        form.name = "Кефир"
-
-        XCTAssertEqual(item.name, "Молоко")
-        XCTAssertEqual(form.item.name, "Кефир")
-        XCTAssertEqual(form.item.id, item.id)
-    }
-
-    func testOpenItemEditorDisablesExpenseSave() {
-        var draft = AddExpenseDraft()
-        draft.entryMode = .cart
-        draft.merchant = "Магазин"
-        draft.selectedCategory = AddExpenseCategory.defaultCategory(name: "Продукты")
-        draft.upsertItem(AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 1, unitPriceText: "95"))
-
-        XCTAssertTrue(draft.isSaveEnabled(hasOpenItemEditor: false))
-        XCTAssertFalse(draft.isSaveEnabled(hasOpenItemEditor: true))
-    }
-
-    func testAmountOnlyModeCanSaveWithManualAmountMerchantAndCategory() {
-        var draft = AddExpenseDraft()
-        draft.entryMode = .amountOnly
-        draft.amountText = "500"
-        draft.merchant = "Магазин"
+        draft.amountText = "500,50"
+        draft.merchant = "Молоко"
         draft.selectedCategory = AddExpenseCategory.defaultCategory(name: "Продукты")
 
-        XCTAssertTrue(draft.isSaveEnabled(hasOpenItemEditor: false))
-        XCTAssertEqual(draft.normalizedMinorUnits, 50_000)
+        XCTAssertTrue(draft.canSave)
+        XCTAssertEqual(draft.normalizedMinorUnits, 50_050)
     }
 
-    func testCartModeCanSaveOnlyWithConfirmedItemMerchantAndCategory() {
+    func testSingleItemRequiresPositiveAmountMerchantAndCategory() {
         var draft = AddExpenseDraft()
-        draft.entryMode = .cart
-        draft.merchant = "Магазин"
+        draft.merchant = "Молоко"
         draft.selectedCategory = AddExpenseCategory.defaultCategory(name: "Продукты")
 
-        XCTAssertFalse(draft.isSaveEnabled(hasOpenItemEditor: false))
+        for amount in ["", "0", "abc"] {
+            draft.amountText = amount
+            XCTAssertFalse(draft.canSave, "Invalid amount: \(amount)")
+        }
 
-        draft.upsertItem(AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 1, unitPriceText: "95"))
+        draft.amountText = "95"
+        draft.merchant = "  \n "
+        XCTAssertFalse(draft.canSave)
 
-        XCTAssertTrue(draft.isSaveEnabled(hasOpenItemEditor: false))
-        XCTAssertFalse(draft.isSaveEnabled(hasOpenItemEditor: true))
-        XCTAssertEqual(draft.normalizedMinorUnits, 9_500)
+        draft.merchant = "Молоко"
+        draft.selectedCategory = nil
+        XCTAssertFalse(draft.canSave)
     }
 
     func testKeyboardLayoutAddsScrollableBottomSpaceOnlyWhenKeyboardIsVisible() {
         XCTAssertEqual(AddExpenseKeyboardLayout.bottomContentPadding(keyboardHeight: 0), 24)
         XCTAssertEqual(AddExpenseKeyboardLayout.bottomContentPadding(keyboardHeight: 336), 360)
-    }
-
-    func testAddExpenseDraftCalculatesCartTotalWithDeliveryAndFixedDiscount() {
-        var draft = AddExpenseDraft()
-        draft.upsertItem(AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 2, unitPriceText: "95"))
-        draft.upsertItem(AddExpenseItemDraft(id: UUID(), name: "Хлеб", quantity: 1, unitPriceText: "120"))
-        draft.deliveryFeeText = "99"
-        draft.discountText = "10"
-        draft.discountType = .fixed
-
-        XCTAssertEqual(draft.itemsSubtotalMinorUnits, 31_000)
-        XCTAssertEqual(draft.discountMinorUnits, 1_000)
-        XCTAssertEqual(draft.totalMinorUnits, 39_900)
-    }
-
-    func testAddExpenseDraftCalculatesPercentageDiscountFromItemsOnly() {
-        var draft = AddExpenseDraft()
-        draft.upsertItem(AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 2, unitPriceText: "95"))
-        draft.deliveryFeeText = "99"
-        draft.discountText = "10"
-        draft.discountType = .percentage
-
-        XCTAssertEqual(draft.discountMinorUnits, 1_900)
-        XCTAssertEqual(draft.totalMinorUnits, 27_000)
-    }
-
-    func testFixedDiscountCannotExceedItemsSubtotalAndDelivery() {
-        var draft = AddExpenseDraft()
-        draft.upsertItem(AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 1, unitPriceText: "95"))
-        draft.deliveryFeeText = "5"
-        draft.discountType = .fixed
-        draft.discountText = "101"
-
-        XCTAssertNil(draft.totalMinorUnits)
-        XCTAssertNil(draft.normalizedMinorUnits)
-    }
-
-    func testFixedDiscountCanUseItemsSubtotalAndDelivery() {
-        var draft = AddExpenseDraft()
-        draft.upsertItem(AddExpenseItemDraft(id: UUID(), name: "Молоко", quantity: 1, unitPriceText: "95"))
-        draft.deliveryFeeText = "5"
-        draft.discountType = .fixed
-        draft.discountText = "100"
-
-        XCTAssertEqual(draft.totalMinorUnits, 0)
     }
 
     func testValidatedNewCategoryNameTrimsOuterWhitespaceAndNewlines() {

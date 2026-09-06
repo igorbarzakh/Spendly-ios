@@ -108,6 +108,7 @@ struct DashboardView: View {
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(AppColor.dashboardSecondaryText)
+                    .padding(.trailing, 4)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
