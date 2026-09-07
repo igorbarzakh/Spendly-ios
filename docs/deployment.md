@@ -94,6 +94,21 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml logs --tail=200 api
 
 Caddy redacts credentials by default, and the Caddyfile explicitly removes `Authorization` and `Cookie` fields from access logs. Do not enable `log_credentials`.
 
+## GitHub Actions deployment
+
+Backend production deployment is automated by `.github/workflows/deploy-backend.yml`. The workflow runs after pushes to `main` or `master` only when backend deployment inputs change: `backend/**`, `deploy/**`, or the deploy workflow itself. Client-only changes under `ios/**`, `project.yml`, or `Spendly.xcodeproj/**` do not rebuild or redeploy the backend.
+
+Create these repository secrets before relying on automatic deployment:
+
+- `DEPLOY_HOST`: VDS hostname or IP address.
+- `DEPLOY_USER`: SSH user that owns the production repository checkout.
+- `DEPLOY_SSH_KEY`: private SSH key allowed to connect as `DEPLOY_USER`.
+- `DEPLOY_HOST_KEY`: pinned SSH host key line for the VDS. Generate it for the exact `DEPLOY_HOST` value, for example `ssh-keyscan -H "$DEPLOY_HOST"`.
+- `DEPLOY_PATH`: absolute path to the production repository checkout on the VDS.
+- `DEPLOY_PORT`: optional SSH port. The workflow uses `22` when this secret is absent.
+
+The server checkout must already exist, have `origin` configured for this repository, and contain a production `deploy/.env`. The deployment user must be able to run `git`, `docker compose`, `deploy/backup/backup.sh`, and `deploy/tests/smoke.sh` from `DEPLOY_PATH` without interactive prompts.
+
 ## Rollback
 
 Application rollback is performed by restoring the previous `SPENDLY_API_TAG`, rebuilding/re-pulling that image, and recreating `api`. Do not run a down migration automatically: schema rollback is a separately reviewed operation and may destroy data.

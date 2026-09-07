@@ -1,0 +1,86 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - backend/**
+      - deploy/**
+      - .github/workflows/deploy-backend.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy backend to production
+    runs-on: ubuntu-26.04
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify deploy secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_HOST_KEY"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_PATH"
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          port="${DEPLOY_PORT:-22}"
+          ssh -i ~/.ssh/deploy_key -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && SPENDLY_DEPLOY_SHA='$GITHUB_SHA' sh -s" <<'REMOTE'
+          set -eu
+
+          test -f deploy/.env
+          git fetch --prune origin
+          git reset --hard "$SPENDLY_DEPLOY_SHA"
+
+          if grep -q '^SPENDLY_API_TAG=' deploy/.env; then
+            sed -i "s/^SPENDLY_API_TAG=.*/SPENDLY_API_TAG=$SPENDLY_DEPLOY_SHA/" deploy/.env
+          else
+            printf '\nSPENDLY_API_TAG=%s\n' "$SPENDLY_DEPLOY_SHA" >> deploy/.env
+          fi
+
+          sh deploy/tests/config.sh
+          docker compose --env-file deploy/.env -f deploy/compose.yaml config --quiet
+          deploy/backup/backup.sh
+          docker compose --env-file deploy/.env -f deploy/compose.yaml --profile tools build api migrate
+          docker compose --env-file deploy/.env -f deploy/compose.yaml --profile tools run --rm migrate up
+          docker compose --env-file deploy/.env -f deploy/compose.yaml up -d api caddy
+          sh deploy/tests/smoke.sh
+          REMOTE
