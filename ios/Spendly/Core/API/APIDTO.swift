@@ -37,6 +37,11 @@ struct UserDTO: Decodable, Sendable {
 struct EmptyResponseDTO: Decodable, Sendable {}
 
 struct PurchasesResponseDTO: Decodable, Sendable { let purchases: [PurchaseDTO] }
+struct PurchasePageResponseDTO: Decodable, Sendable {
+    let purchases: [PurchaseDTO]
+    let nextCursor: String?
+    let hasMore: Bool
+}
 struct GroupsResponseDTO: Decodable, Sendable { let groups: [GroupDTO] }
 
 struct PurchaseItemDTO: Codable, Sendable {
@@ -95,7 +100,7 @@ struct PurchaseDTO: Codable, Sendable {
     let timeZone: String
     let deliveryFeeMinor: Int64?
     let discount: PurchaseDiscountDTO?
-    let items: [PurchaseItemDTO]
+    let items: [PurchaseItemDTO]?
     let ownerId: UUID?
     let version: Int64?
     let totalAmountMinor: Int64?

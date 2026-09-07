@@ -1,21 +1,32 @@
 import SwiftUI
 
 struct ExpensesHomeView: View {
+    let purchaseRepository: any PurchaseRepository
+    let expenseContext: ExpenseContext
     let onSignOut: () -> Void
 
     @State private var selectedTab: SpendlyTab = .expenses
     @State private var isAddExpensePresented = false
+    @State private var isAllTransactionsPresented = false
+    @State private var shouldAddExpenseAfterClosingTransactions = false
 
-    init(onSignOut: @escaping () -> Void = {}) {
+    init(
+        purchaseRepository: any PurchaseRepository,
+        expenseContext: ExpenseContext,
+        onSignOut: @escaping () -> Void = {}
+    ) {
+        self.purchaseRepository = purchaseRepository
+        self.expenseContext = expenseContext
         self.onSignOut = onSignOut
     }
 
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
-                DashboardView {
-                    isAddExpensePresented = true
-                }
+                DashboardView(
+                    onAddTransaction: { isAddExpensePresented = true },
+                    onViewAllTransactions: { isAllTransactionsPresented = true }
+                )
             }
             .tag(SpendlyTab.expenses)
             .tabItem {
@@ -54,6 +65,23 @@ struct ExpensesHomeView: View {
             }
             .presentationDetents([.large])
         }
+        .fullScreenCover(
+            isPresented: $isAllTransactionsPresented,
+            onDismiss: {
+                guard shouldAddExpenseAfterClosingTransactions else { return }
+                shouldAddExpenseAfterClosingTransactions = false
+                isAddExpensePresented = true
+            }
+        ) {
+            AllTransactionsView(
+                repository: purchaseRepository,
+                context: expenseContext,
+                onAddTransaction: {
+                    shouldAddExpenseAfterClosingTransactions = true
+                    isAllTransactionsPresented = false
+                }
+            )
+        }
     }
 }
 
@@ -90,5 +118,18 @@ private enum SpendlyTab: Hashable {
 }
 
 #Preview {
-    ExpensesHomeView()
+    ExpensesHomeView(
+        purchaseRepository: PreviewPurchaseRepository(),
+        expenseContext: .personal(UserID(rawValue: UUID()))
+    )
+}
+
+private actor PreviewPurchaseRepository: PurchaseRepository {
+    func purchases(in context: ExpenseContext, interval: DateInterval) async throws -> [Purchase] { [] }
+    func purchasePage(in context: ExpenseContext, after cursor: String?, limit: Int) async throws -> PurchasePage {
+        PurchasePage(purchases: [], nextCursor: nil, hasMore: false)
+    }
+    func create(_ draft: PurchaseDraft, idempotencyKey: UUID) async throws -> Purchase { throw AppFailure.unknown }
+    func update(_ purchase: Purchase, expectedVersion: Int64) async throws -> Purchase { throw AppFailure.unknown }
+    func delete(id: PurchaseID, expectedVersion: Int64) async throws {}
 }

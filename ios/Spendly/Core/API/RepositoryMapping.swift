@@ -24,7 +24,7 @@ enum RepositoryMapping {
             )
         }
         guard dto.kind == "detailed" else { throw APIError.decoding }
-        let items = try dto.items.sorted { $0.position < $1.position }.map {
+        let items = try (dto.items ?? []).sorted { $0.position < $1.position }.map {
             if let quantity = $0.quantity, let unitPriceMinor = $0.unitPriceMinor, unitPriceMinor > 0 {
                 return try PurchaseItem(
                     id: PurchaseItemID(rawValue: $0.id), name: $0.name, category: $0.category,
@@ -150,6 +150,21 @@ enum RepositoryMapping {
             URLQueryItem(name: "from", value: ISO8601DateFormatter().string(from: interval.start)),
             URLQueryItem(name: "to", value: ISO8601DateFormatter().string(from: interval.end))
         ]
+        if case let .group(groupID) = context {
+            items.append(URLQueryItem(name: "group_id", value: groupID.rawValue.uuidString.lowercased()))
+        }
+        return items
+    }
+
+    static func purchasePageQueryItems(
+        context: ExpenseContext,
+        cursor: String?,
+        limit: Int
+    ) -> [URLQueryItem] {
+        var items = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor, !cursor.isEmpty {
+            items.append(URLQueryItem(name: "cursor", value: cursor))
+        }
         if case let .group(groupID) = context {
             items.append(URLQueryItem(name: "group_id", value: groupID.rawValue.uuidString.lowercased()))
         }

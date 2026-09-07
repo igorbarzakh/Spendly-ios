@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 protocol HTTPTransport: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
@@ -133,6 +134,7 @@ actor APIClient {
     private let refreshAuthorization: AuthorizationRefresher
     private let requestID: RequestIDProvider
     private let decoder: JSONDecoder
+    private let logger = Logger(subsystem: "app.spendly.ios", category: "APIClient")
 
     init(
         baseURL: URL,
@@ -182,6 +184,16 @@ actor APIClient {
             return try await send(endpoint, token: token, didRefresh: didRefresh, retryCount: retryCount + 1)
         }
 
+        let path = request.url?.path(percentEncoded: false) ?? endpoint.path
+        let requestIdentifier = request.value(forHTTPHeaderField: "X-Request-ID") ?? "missing"
+        let authorizationState = token == nil ? "missing" : "attached"
+        logger.info(
+            "\(endpoint.method.rawValue, privacy: .public) \(path, privacy: .public) status=\(response.statusCode) request_id=\(requestIdentifier, privacy: .public) authorization=\(authorizationState, privacy: .public)"
+        )
+#if DEBUG
+        print("[APIClient] \(endpoint.method.rawValue) \(path) status=\(response.statusCode) request_id=\(requestIdentifier) authorization=\(authorizationState)")
+#endif
+
         if response.statusCode == 401,
            endpoint.requiresAuthorization,
            !didRefresh,
@@ -204,6 +216,12 @@ actor APIClient {
             let responseData = data.isEmpty ? Data("{}".utf8) : data
             return try decoder.decode(Response.self, from: responseData)
         } catch {
+            logger.error(
+                "Decoding failed for \(endpoint.method.rawValue, privacy: .public) \(path, privacy: .public) request_id=\(requestIdentifier, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+#if DEBUG
+            print("[APIClient] Decoding failed for \(endpoint.method.rawValue) \(path) request_id=\(requestIdentifier): \(error)")
+#endif
             throw APIError.decoding
         }
     }

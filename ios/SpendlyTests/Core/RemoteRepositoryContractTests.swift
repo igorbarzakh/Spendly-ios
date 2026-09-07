@@ -26,6 +26,44 @@ final class RemoteRepositoryContractTests: XCTestCase {
         XCTAssertEqual(items.map(\.amount.minorUnits), [800, 450])
     }
 
+    func testLoadsPurchasePageWithCursorAndGroupScope() async throws {
+        let response = #"{"purchases":[\#(quickPurchaseJSON)],"next_cursor":"next-page","has_more":true}"#
+        let transport = RepositoryTransport(responses: [.json(200, response)])
+        let repository = RemotePurchaseRepository(apiClient: APIClient(baseURL: baseURL, transport: transport))
+
+        let page = try await repository.purchasePage(
+            in: .group(GroupID(rawValue: groupID)),
+            after: "current-page",
+            limit: 50
+        )
+
+        XCTAssertEqual(page.purchases.map(\.id), [PurchaseID(rawValue: purchaseID)])
+        XCTAssertEqual(page.nextCursor, "next-page")
+        XCTAssertTrue(page.hasMore)
+        let requests = await transport.requests()
+        let request = try XCTUnwrap(requests.first)
+        let queryItems = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: queryItems.compactMap { item in
+            item.value.map { (item.name, $0) }
+        }), [
+            "cursor": "current-page",
+            "group_id": groupID.uuidString.lowercased(),
+            "limit": "50"
+        ])
+    }
+
+    func testLoadsQuickPurchaseWhenItemsFieldIsOmitted() async throws {
+        let quickPurchaseWithoutItems = #"{"id":"\#(purchaseID.uuidString)","kind":"quick","merchant":"Market","category":"Food","amount_minor":1250,"currency_code":"RUB","spent_at":"2026-08-24T12:00:00Z","local_date":"2026-08-24","time_zone":"Europe/Moscow","owner_id":"\#(ownerID.uuidString)","version":1,"total_amount_minor":1250,"created_at":"2026-08-24T12:00:01Z","updated_at":"2026-08-24T12:00:01Z"}"#
+        let response = #"{"purchases":[\#(quickPurchaseWithoutItems)],"has_more":false}"#
+        let transport = RepositoryTransport(responses: [.json(200, response)])
+        let repository = RemotePurchaseRepository(apiClient: APIClient(baseURL: baseURL, transport: transport))
+
+        let page = try await repository.purchasePage(in: .personal(UserID(rawValue: ownerID)), after: nil, limit: 50)
+
+        XCTAssertEqual(page.purchases.map(\.id), [PurchaseID(rawValue: purchaseID)])
+        XCTAssertFalse(page.hasMore)
+    }
+
     func testUsesCachedPurchasesWithoutNetworkRequest() async throws {
         let cachedPurchase = try makeQuickPurchase()
         let cache = RepositoryCache(snapshot: [cachedPurchase])

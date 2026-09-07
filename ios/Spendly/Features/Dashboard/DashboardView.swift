@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     let onAddTransaction: () -> Void
+    let onViewAllTransactions: () -> Void
 
     @State private var selectedPeriod: DashboardPeriod = .month
     @ScaledMetric(relativeTo: .largeTitle) private var amountFontSize: CGFloat = 44
@@ -10,8 +11,12 @@ struct DashboardView: View {
         DashboardSamples.snapshot(for: selectedPeriod)
     }
 
-    init(onAddTransaction: @escaping () -> Void = {}) {
+    init(
+        onAddTransaction: @escaping () -> Void = {},
+        onViewAllTransactions: @escaping () -> Void = {}
+    ) {
         self.onAddTransaction = onAddTransaction
+        self.onViewAllTransactions = onViewAllTransactions
     }
 
     var body: some View {
@@ -130,7 +135,7 @@ struct DashboardView: View {
 
                 Spacer()
 
-                Button("Смотреть все") {}
+                Button("Смотреть все", action: onViewAllTransactions)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(AppColor.dashboardAccent)
             }
@@ -211,21 +216,39 @@ private struct DashboardTransactionRow: View {
     let transaction: DashboardTransaction
 
     var body: some View {
+        TransactionListRow(
+            merchant: transaction.merchant,
+            details: transaction.detailsText,
+            amountMinorUnits: transaction.amountMinorUnits,
+            symbolName: transaction.category.symbolName,
+            tint: transaction.category.tint
+        )
+    }
+}
+
+struct TransactionListRow: View {
+    let merchant: String
+    let details: String
+    let amountMinorUnits: Int64
+    let symbolName: String
+    let tint: Color
+
+    var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: transaction.category.symbolName)
+            Image(systemName: symbolName)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(transaction.category.tint)
+                .foregroundStyle(tint)
                 .frame(width: 42, height: 42)
-                .background(transaction.category.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.merchant)
+                Text(merchant)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AppColor.dashboardPrimaryText)
                     .lineLimit(1)
 
-                Text(transaction.detailsText)
+                Text(details)
                     .font(.footnote)
                     .foregroundStyle(AppColor.dashboardSecondaryText)
                     .lineLimit(1)
@@ -233,7 +256,7 @@ private struct DashboardTransactionRow: View {
 
             Spacer(minLength: 12)
 
-            Text(DashboardFormatting.expense(transaction.amountMinorUnits))
+            Text(DashboardFormatting.expense(amountMinorUnits))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(AppColor.dashboardPrimaryText)
                 .lineLimit(1)

@@ -41,10 +41,12 @@ private struct SpendlyRootView: View {
                 ProgressView("Restoring session")
             case .signedOut, .signingIn:
                 AuthenticationView(model: model)
-            case .authenticated:
-                ExpensesHomeView {
-                    Task { await model.signOut() }
-                }
+            case let .authenticated(session):
+                ExpensesHomeView(
+                    purchaseRepository: composition.purchaseRepository,
+                    expenseContext: .personal(session.userID),
+                    onSignOut: { Task { await model.signOut() } }
+                )
             }
         }
         .task {

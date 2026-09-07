@@ -53,6 +53,33 @@ actor RemotePurchaseRepository: PurchaseRepository {
         }
     }
 
+    func purchasePage(
+        in context: ExpenseContext,
+        after cursor: String?,
+        limit: Int
+    ) async throws -> PurchasePage {
+        do {
+            let response = try await apiClient.send(
+                APIEndpoint<PurchasePageResponseDTO>.get(
+                    "/v1/purchases",
+                    queryItems: RepositoryMapping.purchasePageQueryItems(
+                        context: context,
+                        cursor: cursor,
+                        limit: limit
+                    ),
+                    requiresAuthorization: true
+                )
+            )
+            return PurchasePage(
+                purchases: try response.purchases.map(RepositoryMapping.purchase(from:)),
+                nextCursor: response.nextCursor,
+                hasMore: response.hasMore
+            )
+        } catch {
+            throw RepositoryMapping.failure(from: error)
+        }
+    }
+
     func create(_ draft: PurchaseDraft, idempotencyKey: UUID) async throws -> Purchase {
         if let outbox {
             _ = try await outbox.enqueue(
