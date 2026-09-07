@@ -64,7 +64,7 @@ jobs:
           port="${DEPLOY_PORT:-22}"
           ssh -i ~/.ssh/deploy_key -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && SPENDLY_DEPLOY_SHA='$GITHUB_SHA' sh -s" <<'REMOTE'
-          set -eu
+          set -eux
 
           test -f deploy/.env
           git fetch --prune origin
