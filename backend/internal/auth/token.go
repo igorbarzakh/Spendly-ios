@@ -116,10 +116,16 @@ func ParseSigningKey(encoded string) (ed25519.PrivateKey, ed25519.PublicKey, err
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(raw) != ed25519.PrivateKeySize {
-		return nil, nil, errors.New("Ed25519 private key must be 64 bytes")
+	var seed []byte
+	switch len(raw) {
+	case ed25519.SeedSize:
+		seed = raw
+	case ed25519.PrivateKeySize:
+		seed = raw[:ed25519.SeedSize]
+	default:
+		return nil, nil, errors.New("Ed25519 signing key must be a 32-byte seed or 64-byte private key")
 	}
-	privateKey := ed25519.PrivateKey(raw)
+	privateKey := ed25519.NewKeyFromSeed(seed)
 	publicKey, ok := privateKey.Public().(ed25519.PublicKey)
 	if !ok {
 		return nil, nil, errors.New("derive Ed25519 public key")

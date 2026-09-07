@@ -30,7 +30,7 @@ Replace every placeholder in `deploy/.env`. Generate a database password and a r
 
 ```sh
 openssl rand -base64 36
-openssl rand 64 | base64 -w0 | tr -d '='
+openssl rand 32 | base64 -w0 | tr -d '='
 ```
 
 `DATABASE_URL` must contain the URL-encoded database password. `POSTGRES_PASSWORD` contains the original password. Never commit `deploy/.env`.

@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"testing"
 	"time"
@@ -27,6 +28,46 @@ func TestAccessTokenRoundTrip(t *testing.T) {
 	}
 	if time.Until(expiresAt) <= 0 {
 		t.Fatal("expected future expiry")
+	}
+}
+
+func TestParsedRaw64ByteSigningKeyIssuesVerifiableAccessToken(t *testing.T) {
+	raw := make([]byte, ed25519.PrivateKeySize)
+	if _, err := rand.Read(raw); err != nil {
+		t.Fatalf("generate raw signing key: %v", err)
+	}
+	encoded := base64.RawStdEncoding.EncodeToString(raw)
+	privateKey, publicKey, err := ParseSigningKey(encoded)
+	if err != nil {
+		t.Fatalf("parse signing key: %v", err)
+	}
+	manager := NewTokenManager(privateKey, publicKey, "spendly", "spendly-ios", 15*time.Minute, time.Now)
+	token, _, err := manager.IssueAccess(UserID("11111111-1111-4111-8111-111111111111"), SessionID("22222222-2222-4222-8222-222222222222"))
+	if err != nil {
+		t.Fatalf("issue access token: %v", err)
+	}
+	if _, err = manager.VerifyAccess(token); err != nil {
+		t.Fatalf("verify access token: %v", err)
+	}
+}
+
+func TestParsed32ByteSeedIssuesVerifiableAccessToken(t *testing.T) {
+	seed := make([]byte, ed25519.SeedSize)
+	if _, err := rand.Read(seed); err != nil {
+		t.Fatalf("generate signing seed: %v", err)
+	}
+	encoded := base64.RawStdEncoding.EncodeToString(seed)
+	privateKey, publicKey, err := ParseSigningKey(encoded)
+	if err != nil {
+		t.Fatalf("parse signing seed: %v", err)
+	}
+	manager := NewTokenManager(privateKey, publicKey, "spendly", "spendly-ios", 15*time.Minute, time.Now)
+	token, _, err := manager.IssueAccess(UserID("11111111-1111-4111-8111-111111111111"), SessionID("22222222-2222-4222-8222-222222222222"))
+	if err != nil {
+		t.Fatalf("issue access token: %v", err)
+	}
+	if _, err = manager.VerifyAccess(token); err != nil {
+		t.Fatalf("verify access token: %v", err)
 	}
 }
 
