@@ -4,7 +4,7 @@
 
 **Goal:** Deploy the backend to the production Compose host after backend-related pushes to `main` or `master`, without rebuilding the backend for client-only changes.
 
-**Architecture:** GitHub Actions remains the orchestration layer. Backend CI and deploy workflows use path filters so iOS-only changes do not run backend image builds. Deployment connects to the existing VDS checkout over SSH and runs the documented Docker Compose deployment sequence.
+**Architecture:** GitHub Actions remains the orchestration layer. One backend workflow uses path filters so iOS-only changes do not run backend image builds. The deploy job depends on the test job, connects to the existing VDS checkout over SSH, and runs the documented Docker Compose deployment sequence.
 
 **Tech Stack:** GitHub Actions, SSH, Docker Compose, Go backend, existing `deploy/compose.yaml`.
 
@@ -23,14 +23,14 @@ Limit pull request and push triggers to backend/deploy/workflow files.
 
 Run a local YAML parser against `.github/workflows/backend.yml`.
 
-### Task 2: Add Production Backend Deploy Workflow
+### Task 2: Add Production Backend Deploy Job
 
 **Files:**
-- Create: `.github/workflows/deploy-backend.yml`
+- Modify: `.github/workflows/backend.yml`
 
 **Step 1: Add trigger**
 
-Run on push to `main` and `master` only when backend/deploy/deploy-workflow files change.
+Run after the backend test job on push to `main` and `master` only when backend/deploy/backend-workflow files change.
 
 **Step 2: Add SSH deployment**
 
@@ -38,7 +38,7 @@ Install the deploy SSH key, verify required secrets, update the existing server 
 
 **Step 3: Verify YAML syntax**
 
-Run a local YAML parser against `.github/workflows/deploy-backend.yml`.
+Run a local YAML parser against `.github/workflows/backend.yml`.
 
 ### Task 3: Document Operator Setup
 

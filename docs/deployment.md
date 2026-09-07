@@ -96,7 +96,7 @@ Caddy redacts credentials by default, and the Caddyfile explicitly removes `Auth
 
 ## GitHub Actions deployment
 
-Backend production deployment is automated by `.github/workflows/deploy-backend.yml`. The workflow runs after pushes to `main` or `master` only when backend deployment inputs change: `backend/**`, `deploy/**`, or the deploy workflow itself. Client-only changes under `ios/**`, `project.yml`, or `Spendly.xcodeproj/**` do not rebuild or redeploy the backend.
+Backend production deployment is automated by `.github/workflows/backend.yml`. The workflow runs after pushes to `main` or `master` only when backend deployment inputs change: `backend/**`, `deploy/**`, or the backend workflow itself. Client-only changes under `ios/**`, `project.yml`, or `Spendly.xcodeproj/**` do not rebuild or redeploy the backend.
 
 Create these repository secrets before relying on automatic deployment:
 
