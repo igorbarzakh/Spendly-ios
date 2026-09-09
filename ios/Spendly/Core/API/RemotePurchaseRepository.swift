@@ -2,6 +2,9 @@ import Foundation
 
 protocol PurchaseCache: Sendable {
     func cachedPurchases(in context: ExpenseContext, interval: DateInterval) async throws -> [Purchase]?
+    func cachedPurchasesForMerge(in context: ExpenseContext, interval: DateInterval) async throws -> [Purchase]
+    func cachedPurchasePage(in context: ExpenseContext, after cursor: String?, limit: Int) async throws -> PurchasePage?
+    func locallyDeletedPurchaseIDs(in context: ExpenseContext) async throws -> Set<PurchaseID>
     func store(_ purchases: [Purchase], in context: ExpenseContext, interval: DateInterval) async throws
     func upsert(_ purchase: Purchase) async throws
     func remove(id: PurchaseID) async throws
@@ -37,6 +40,8 @@ actor RemotePurchaseRepository: PurchaseRepository {
         if let cached = try await cache?.cachedPurchases(in: context, interval: interval) {
             return cached
         }
+        let cachedPurchases = try await cache?.cachedPurchasesForMerge(in: context, interval: interval) ?? []
+        let locallyDeletedIDs = try await cache?.locallyDeletedPurchaseIDs(in: context) ?? []
         do {
             let response = try await apiClient.send(
                 APIEndpoint<PurchasesResponseDTO>.get(
@@ -45,10 +50,18 @@ actor RemotePurchaseRepository: PurchaseRepository {
                     requiresAuthorization: true
                 )
             )
-            let purchases = try response.purchases.map(RepositoryMapping.purchase(from:))
+            let purchases = Self.mergedPurchases(
+                try response.purchases
+                    .map(RepositoryMapping.purchase(from:))
+                    .filter { !locallyDeletedIDs.contains($0.id) },
+                cachedPurchases: cachedPurchases
+            )
             try await cache?.store(purchases, in: context, interval: interval)
             return purchases
         } catch {
+            if !cachedPurchases.isEmpty {
+                return cachedPurchases
+            }
             throw RepositoryMapping.failure(from: error)
         }
     }
@@ -58,6 +71,8 @@ actor RemotePurchaseRepository: PurchaseRepository {
         after cursor: String?,
         limit: Int
     ) async throws -> PurchasePage {
+        let cachedPage = try await cache?.cachedPurchasePage(in: context, after: cursor, limit: limit)
+        let locallyDeletedIDs = try await cache?.locallyDeletedPurchaseIDs(in: context) ?? []
         do {
             let response = try await apiClient.send(
                 APIEndpoint<PurchasePageResponseDTO>.get(
@@ -70,12 +85,18 @@ actor RemotePurchaseRepository: PurchaseRepository {
                     requiresAuthorization: true
                 )
             )
-            return PurchasePage(
-                purchases: try response.purchases.map(RepositoryMapping.purchase(from:)),
+            let remotePage = PurchasePage(
+                purchases: try response.purchases
+                    .map(RepositoryMapping.purchase(from:))
+                    .filter { !locallyDeletedIDs.contains($0.id) },
                 nextCursor: response.nextCursor,
                 hasMore: response.hasMore
             )
+            return Self.mergedPage(remotePage, cachedPage: cachedPage, limit: limit)
         } catch {
+            if let cachedPage {
+                return cachedPage
+            }
             throw RepositoryMapping.failure(from: error)
         }
     }
@@ -151,6 +172,59 @@ actor RemotePurchaseRepository: PurchaseRepository {
             try await cache?.remove(id: id)
         } catch {
             throw RepositoryMapping.failure(from: error)
+        }
+    }
+
+    private static func mergedPage(
+        _ remotePage: PurchasePage,
+        cachedPage: PurchasePage?,
+        limit: Int
+    ) -> PurchasePage {
+        guard let cachedPage else { return remotePage }
+
+        var purchasesByID: [PurchaseID: Purchase] = [:]
+        for purchase in remotePage.purchases {
+            purchasesByID[purchase.id] = purchase
+        }
+        for purchase in cachedPage.purchases where purchasesByID[purchase.id] == nil {
+            purchasesByID[purchase.id] = purchase
+        }
+
+        let purchases = purchasesByID.values.sorted {
+            if $0.spentAt == $1.spentAt {
+                return $0.id.rawValue.uuidString > $1.id.rawValue.uuidString
+            }
+            return $0.spentAt > $1.spentAt
+        }
+        let pagePurchases = Array(purchases.prefix(limit))
+
+        return PurchasePage(
+            purchases: pagePurchases,
+            nextCursor: remotePage.nextCursor,
+            hasMore: remotePage.hasMore || purchases.count > limit
+        )
+    }
+
+    private static func mergedPurchases(
+        _ remotePurchases: [Purchase],
+        cachedPurchases: [Purchase]
+    ) -> [Purchase] {
+        guard !cachedPurchases.isEmpty else {
+            return remotePurchases
+        }
+
+        var purchasesByID: [PurchaseID: Purchase] = [:]
+        for purchase in remotePurchases {
+            purchasesByID[purchase.id] = purchase
+        }
+        for purchase in cachedPurchases where purchasesByID[purchase.id] == nil {
+            purchasesByID[purchase.id] = purchase
+        }
+        return purchasesByID.values.sorted {
+            if $0.spentAt == $1.spentAt {
+                return $0.id.rawValue.uuidString > $1.id.rawValue.uuidString
+            }
+            return $0.spentAt > $1.spentAt
         }
     }
 }

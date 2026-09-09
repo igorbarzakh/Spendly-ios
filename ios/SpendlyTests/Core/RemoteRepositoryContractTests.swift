@@ -203,6 +203,145 @@ final class RemoteRepositoryContractTests: XCTestCase {
         XCTAssertEqual(requestCount, 0)
     }
 
+    func testPurchasePageIncludesOptimisticCachedCreateBeforeServerSync() async throws {
+        let transport = RepositoryTransport(responses: [
+            .json(200, #"{"purchases":[],"has_more":false}"#)
+        ])
+        let outbox = RepositoryOutbox()
+        let cache = RepositoryCache()
+        let repository = RemotePurchaseRepository(
+            apiClient: APIClient(baseURL: baseURL, transport: transport),
+            cache: cache,
+            outbox: outbox
+        )
+        let purchase = try makeQuickPurchase()
+        let draft = PurchaseDraft(
+            id: purchase.id, ownerID: purchase.ownerID, groupID: nil, merchant: purchase.merchant,
+            spentAt: purchase.spentAt, localDate: purchase.localDate, timeZone: purchase.timeZone,
+            kind: purchase.kind
+        )
+
+        let optimistic = try await repository.create(
+            draft,
+            idempotencyKey: UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!
+        )
+        let page = try await repository.purchasePage(
+            in: .personal(UserID(rawValue: ownerID)),
+            after: nil,
+            limit: 50
+        )
+
+        XCTAssertEqual(page.purchases, [optimistic])
+        XCTAssertFalse(page.hasMore)
+    }
+
+    @MainActor
+    func testPurchaseIntervalIncludesOptimisticCachedCreateBeforeServerSync() async throws {
+        let transport = RepositoryTransport(responses: [
+            .json(200, #"{"purchases":[]}"#)
+        ])
+        let store = try SwiftDataStore(inMemory: true)
+        let repository = RemotePurchaseRepository(
+            apiClient: APIClient(baseURL: baseURL, transport: transport),
+            cache: store,
+            outbox: store
+        )
+        let purchase = try makeQuickPurchase()
+        let draft = PurchaseDraft(
+            id: purchase.id, ownerID: purchase.ownerID, groupID: nil, merchant: purchase.merchant,
+            spentAt: purchase.spentAt, localDate: purchase.localDate, timeZone: purchase.timeZone,
+            kind: purchase.kind
+        )
+
+        let optimistic = try await repository.create(
+            draft,
+            idempotencyKey: UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!
+        )
+        let purchases = try await repository.purchases(
+            in: .personal(UserID(rawValue: ownerID)),
+            interval: DateInterval(start: date("2026-08-01T00:00:00Z"), end: date("2026-09-01T00:00:00Z"))
+        )
+
+        XCTAssertEqual(purchases, [optimistic])
+    }
+
+    @MainActor
+    func testStoreDoesNotResurrectLocallyDeletedPurchaseFromStaleResponse() async throws {
+        let store = try SwiftDataStore(inMemory: true)
+        let purchase = try makeQuickPurchase()
+        let interval = DateInterval(
+            start: date("2026-08-01T00:00:00Z"),
+            end: date("2026-09-01T00:00:00Z")
+        )
+        try await store.store([purchase], in: .personal(purchase.ownerID), interval: interval)
+        try await store.remove(id: purchase.id)
+        let locallyDeletedIDs = try await store.locallyDeletedPurchaseIDs(in: .personal(purchase.ownerID))
+        XCTAssertEqual(locallyDeletedIDs, [purchase.id])
+
+        try await store.store([purchase], in: .personal(purchase.ownerID), interval: interval)
+
+        let cached = try await store.cachedPurchases(in: .personal(purchase.ownerID), interval: interval)
+        XCTAssertEqual(cached, [])
+    }
+
+    func testPurchasePageFiltersPendingDeletesFromStaleServerResponse() async throws {
+        let deletedIDs = [
+            UUID(uuidString: "22222222-2222-4222-8222-222222222222")!,
+            UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+        ]
+        let visibleIDs = [
+            UUID(uuidString: "44444444-4444-4444-8444-444444444444")!,
+            UUID(uuidString: "55555555-5555-4555-8555-555555555555")!,
+            UUID(uuidString: "66666666-6666-4666-8666-666666666666")!,
+            UUID(uuidString: "77777777-7777-4777-8777-777777777777")!,
+            UUID(uuidString: "88888888-8888-4888-8888-888888888888")!
+        ]
+        let responsePurchases = (deletedIDs + Array(visibleIDs.prefix(3)))
+            .map { quickPurchaseJSON(id: $0) }
+            .joined(separator: ",")
+        let transport = RepositoryTransport(responses: [
+            .json(200, #"{"purchases":[\#(responsePurchases)],"has_more":false}"#)
+        ])
+        let cache = RepositoryCache(deletedIDs: Set(deletedIDs.map(PurchaseID.init(rawValue:))))
+        let repository = RemotePurchaseRepository(
+            apiClient: APIClient(baseURL: baseURL, transport: transport),
+            cache: cache
+        )
+
+        let page = try await repository.purchasePage(
+            in: .personal(UserID(rawValue: ownerID)),
+            after: nil,
+            limit: 5
+        )
+
+        XCTAssertEqual(page.purchases.map(\.id), visibleIDs.prefix(3).map(PurchaseID.init(rawValue:)))
+        let requests = await transport.requests()
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertTrue(request.url?.query?.contains("limit=5") == true)
+    }
+
+    func testPurchaseIntervalFiltersPendingDeleteFromStaleServerResponse() async throws {
+        let deletedID = PurchaseID(rawValue: purchaseID)
+        let transport = RepositoryTransport(responses: [
+            .json(200, #"{"purchases":[\#(quickPurchaseJSON)]}"#)
+        ])
+        let cache = RepositoryCache(deletedIDs: [deletedID])
+        let repository = RemotePurchaseRepository(
+            apiClient: APIClient(baseURL: baseURL, transport: transport),
+            cache: cache
+        )
+
+        let purchases = try await repository.purchases(
+            in: .personal(UserID(rawValue: ownerID)),
+            interval: DateInterval(
+                start: date("2026-08-01T00:00:00Z"),
+                end: date("2026-09-01T00:00:00Z")
+            )
+        )
+
+        XCTAssertTrue(purchases.isEmpty)
+    }
+
     func testMapsGroupsAndStatistics() async throws {
         let transport = RepositoryTransport(responses: [
             .json(200, groupsJSON),
@@ -260,7 +399,11 @@ final class RemoteRepositoryContractTests: XCTestCase {
     }
 
     private var quickPurchaseJSON: String {
-        #"{"id":"\#(purchaseID.uuidString)","kind":"quick","merchant":"Market","category":"Food","amount_minor":1250,"currency_code":"RUB","spent_at":"2026-08-24T12:00:00Z","local_date":"2026-08-24","time_zone":"Europe/Moscow","items":[],"owner_id":"\#(ownerID.uuidString)","version":1,"total_amount_minor":1250,"created_at":"2026-08-24T12:00:01Z","updated_at":"2026-08-24T12:00:01Z"}"#
+        quickPurchaseJSON(id: purchaseID)
+    }
+
+    private func quickPurchaseJSON(id: UUID) -> String {
+        #"{"id":"\#(id.uuidString)","kind":"quick","merchant":"Market","category":"Food","amount_minor":1250,"currency_code":"RUB","spent_at":"2026-08-24T12:00:00Z","local_date":"2026-08-24","time_zone":"Europe/Moscow","items":[],"owner_id":"\#(ownerID.uuidString)","version":1,"total_amount_minor":1250,"created_at":"2026-08-24T12:00:01Z","updated_at":"2026-08-24T12:00:01Z"}"#
     }
 
     private var purchasesJSON: String {
@@ -293,11 +436,26 @@ private actor RepositoryTransport: HTTPTransport {
 
 private actor RepositoryCache: PurchaseCache {
     private var snapshot: [Purchase]?
-    init(snapshot: [Purchase]? = nil) { self.snapshot = snapshot }
+    private var deletedIDs: Set<PurchaseID>
+    init(snapshot: [Purchase]? = nil, deletedIDs: Set<PurchaseID> = []) {
+        self.snapshot = snapshot
+        self.deletedIDs = deletedIDs
+    }
     func cachedPurchases(in context: ExpenseContext, interval: DateInterval) async throws -> [Purchase]? { snapshot }
+    func cachedPurchasesForMerge(in context: ExpenseContext, interval: DateInterval) async throws -> [Purchase] {
+        snapshot ?? []
+    }
+    func cachedPurchasePage(in context: ExpenseContext, after cursor: String?, limit: Int) async throws -> PurchasePage? {
+        guard cursor == nil, let snapshot else { return nil }
+        return PurchasePage(purchases: Array(snapshot.prefix(limit)), nextCursor: nil, hasMore: snapshot.count > limit)
+    }
+    func locallyDeletedPurchaseIDs(in context: ExpenseContext) async throws -> Set<PurchaseID> { deletedIDs }
     func store(_ purchases: [Purchase], in context: ExpenseContext, interval: DateInterval) async throws { snapshot = purchases }
     func upsert(_ purchase: Purchase) async throws { snapshot = [purchase] }
-    func remove(id: PurchaseID) async throws { snapshot?.removeAll { $0.id == id } }
+    func remove(id: PurchaseID) async throws {
+        snapshot?.removeAll { $0.id == id }
+        deletedIDs.insert(id)
+    }
     func currentSnapshot() -> [Purchase]? { snapshot }
 }
 

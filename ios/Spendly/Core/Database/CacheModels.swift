@@ -8,15 +8,15 @@ final class CachedPurchaseRecord {
     var groupID: UUID?
     var spentAt: Date
     var payload: Data
-    var isDeleted: Bool
+    @Attribute(originalName: "isDeleted") var isTombstone: Bool
 
-    init(purchase: Purchase, payload: Data, isDeleted: Bool = false) {
+    init(purchase: Purchase, payload: Data, isTombstone: Bool = false) {
         id = purchase.id.rawValue
         ownerID = purchase.ownerID.rawValue
         groupID = purchase.groupID?.rawValue
         spentAt = purchase.spentAt
         self.payload = payload
-        self.isDeleted = isDeleted
+        self.isTombstone = isTombstone
     }
 }
 

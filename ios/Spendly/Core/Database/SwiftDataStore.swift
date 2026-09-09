@@ -26,18 +26,60 @@ final class SwiftDataStore: PurchaseCache {
         let rangeKey = Self.rangeKey(context: expenseContext, interval: interval)
         let ranges = try context.fetch(FetchDescriptor<CachedRangeRecord>())
         guard ranges.contains(where: { $0.key == rangeKey }) else { return nil }
-        return try context.fetch(FetchDescriptor<CachedPurchaseRecord>())
-            .filter { !$0.isDeleted && Self.matches($0, context: expenseContext) && interval.contains($0.spentAt) }
+        return try await cachedPurchasesForMerge(in: expenseContext, interval: interval)
+    }
+
+    func cachedPurchasesForMerge(in expenseContext: ExpenseContext, interval: DateInterval) async throws -> [Purchase] {
+        try context.fetch(FetchDescriptor<CachedPurchaseRecord>())
+            .filter { !$0.isTombstone && Self.matches($0, context: expenseContext) && interval.contains($0.spentAt) }
             .sorted { $0.spentAt > $1.spentAt }
             .map { try decoder.decode(Purchase.self, from: $0.payload) }
     }
 
+    func cachedPurchasePage(
+        in expenseContext: ExpenseContext,
+        after cursor: String?,
+        limit: Int
+    ) async throws -> PurchasePage? {
+        guard cursor == nil else { return nil }
+
+        let purchases = try context.fetch(FetchDescriptor<CachedPurchaseRecord>())
+            .filter { !$0.isTombstone && Self.matches($0, context: expenseContext) }
+            .sorted {
+                if $0.spentAt == $1.spentAt {
+                    return $0.id.uuidString > $1.id.uuidString
+                }
+                return $0.spentAt > $1.spentAt
+            }
+            .prefix(limit)
+            .map { try decoder.decode(Purchase.self, from: $0.payload) }
+
+        guard !purchases.isEmpty else { return nil }
+
+        return PurchasePage(purchases: Array(purchases), nextCursor: nil, hasMore: false)
+    }
+
+    func locallyDeletedPurchaseIDs(in expenseContext: ExpenseContext) async throws -> Set<PurchaseID> {
+        Set(
+            try context.fetch(FetchDescriptor<CachedPurchaseRecord>())
+                .filter { $0.isTombstone && Self.matches($0, context: expenseContext) }
+                .map { PurchaseID(rawValue: $0.id) }
+        )
+    }
+
     func store(_ purchases: [Purchase], in expenseContext: ExpenseContext, interval: DateInterval) async throws {
         let records = try context.fetch(FetchDescriptor<CachedPurchaseRecord>())
-        for record in records where Self.matches(record, context: expenseContext) && interval.contains(record.spentAt) {
+        let locallyDeletedIDs = Set(
+            records
+                .filter { $0.isTombstone && Self.matches($0, context: expenseContext) }
+                .map(\.id)
+        )
+        for record in records where !record.isTombstone && Self.matches(record, context: expenseContext) && interval.contains(record.spentAt) {
             context.delete(record)
         }
-        for purchase in purchases { try insertOrUpdate(purchase, deleted: false) }
+        for purchase in purchases where !locallyDeletedIDs.contains(purchase.id.rawValue) {
+            try insertOrUpdate(purchase, deleted: false)
+        }
         let key = Self.rangeKey(context: expenseContext, interval: interval)
         if !(try context.fetch(FetchDescriptor<CachedRangeRecord>())).contains(where: { $0.key == key }) {
             context.insert(CachedRangeRecord(key: key))
@@ -51,8 +93,9 @@ final class SwiftDataStore: PurchaseCache {
     }
 
     func remove(id: PurchaseID) async throws {
-        if let record = try record(id: id.rawValue) {
-            record.isDeleted = true
+        let records = try context.fetch(FetchDescriptor<CachedPurchaseRecord>())
+        if let record = records.first(where: { $0.id == id.rawValue }) {
+            record.isTombstone = true
             try context.save()
         }
     }
@@ -137,7 +180,7 @@ final class SwiftDataStore: PurchaseCache {
             if let value = try record(id: purchase.id.rawValue) {
                 context.delete(value)
             } else {
-                context.insert(CachedPurchaseRecord(purchase: purchase, payload: payload, isDeleted: true))
+                context.insert(CachedPurchaseRecord(purchase: purchase, payload: payload, isTombstone: true))
             }
             return
         }
@@ -146,7 +189,7 @@ final class SwiftDataStore: PurchaseCache {
             value.groupID = purchase.groupID?.rawValue
             value.spentAt = purchase.spentAt
             value.payload = payload
-            value.isDeleted = false
+            value.isTombstone = false
         } else {
             context.insert(CachedPurchaseRecord(purchase: purchase, payload: payload))
         }
