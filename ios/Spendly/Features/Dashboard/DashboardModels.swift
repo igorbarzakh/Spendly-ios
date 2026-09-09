@@ -1,9 +1,12 @@
 import Foundation
+import Observation
 
 enum DashboardPeriod: String, CaseIterable, Identifiable {
     case day
     case month
     case year
+
+    static let defaultSelection: DashboardPeriod = .day
 
     var id: Self { self }
 
@@ -68,12 +71,163 @@ struct DashboardBudgetProgress: Equatable {
     }
 }
 
+@MainActor
+@Observable
+final class DashboardSummaryModel {
+    private(set) var totalMinorUnits: Int64 = 0
+    private(set) var isLoading = false
+    private(set) var failure: AppFailure?
+
+    private let repository: any PurchaseRepository
+    private let context: ExpenseContext
+
+    init(
+        repository: any PurchaseRepository,
+        context: ExpenseContext
+    ) {
+        self.repository = repository
+        self.context = context
+    }
+
+    func load(
+        period: DashboardPeriod,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) async {
+        guard !isLoading else { return }
+        isLoading = true
+        failure = nil
+        defer { isLoading = false }
+
+        do {
+            let purchases = try await repository.purchases(
+                in: context,
+                interval: period.interval(containing: now, calendar: calendar)
+            )
+            totalMinorUnits = purchases.reduce(Int64(0)) { $0 + $1.total.minorUnits }
+        } catch is CancellationError {
+            return
+        } catch {
+            failure = error as? AppFailure ?? .unknown
+        }
+    }
+
+    func applyUpdate(
+        from previous: Purchase,
+        to current: Purchase,
+        period: DashboardPeriod,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) {
+        let interval = period.interval(containing: now, calendar: calendar)
+        let previousAmount = interval.contains(previous.spentAt) ? previous.total.minorUnits : 0
+        let currentAmount = interval.contains(current.spentAt) ? current.total.minorUnits : 0
+        totalMinorUnits = max(0, totalMinorUnits - previousAmount + currentAmount)
+    }
+
+    func applyDeletion(
+        _ purchase: Purchase,
+        period: DashboardPeriod,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) {
+        guard period.interval(containing: now, calendar: calendar).contains(purchase.spentAt) else { return }
+        totalMinorUnits = max(0, totalMinorUnits - purchase.total.minorUnits)
+    }
+}
+
+@MainActor
+@Observable
+final class DashboardMonthlyBudgetModel {
+    private(set) var spentMinorUnits: Int64 = 0
+    private(set) var isLoading = false
+    private(set) var failure: AppFailure?
+
+    private let repository: any PurchaseRepository
+    private let context: ExpenseContext
+
+    init(repository: any PurchaseRepository, context: ExpenseContext) {
+        self.repository = repository
+        self.context = context
+    }
+
+    func load(now: Date = .now, calendar: Calendar = .current) async {
+        guard !isLoading else { return }
+        isLoading = true
+        failure = nil
+        defer { isLoading = false }
+
+        do {
+            let interval = DashboardPeriod.month.interval(containing: now, calendar: calendar)
+            let purchases = try await repository.purchases(in: context, interval: interval)
+            spentMinorUnits = purchases.reduce(Int64(0)) { $0 + $1.total.minorUnits }
+        } catch is CancellationError {
+            return
+        } catch {
+            failure = error as? AppFailure ?? .unknown
+        }
+    }
+
+    func applyUpdate(
+        from previous: Purchase,
+        to current: Purchase,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) {
+        let interval = DashboardPeriod.month.interval(containing: now, calendar: calendar)
+        let previousAmount = interval.contains(previous.spentAt) ? previous.total.minorUnits : 0
+        let currentAmount = interval.contains(current.spentAt) ? current.total.minorUnits : 0
+        spentMinorUnits = max(0, spentMinorUnits - previousAmount + currentAmount)
+    }
+
+    func applyDeletion(
+        _ purchase: Purchase,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) {
+        let interval = DashboardPeriod.month.interval(containing: now, calendar: calendar)
+        guard interval.contains(purchase.spentAt) else { return }
+        spentMinorUnits = max(0, spentMinorUnits - purchase.total.minorUnits)
+    }
+}
+
+struct PurchaseMutationEvent: Equatable {
+    let id = UUID()
+    let previous: Purchase
+    let current: Purchase?
+
+    static func updated(from previous: Purchase, to current: Purchase) -> PurchaseMutationEvent {
+        PurchaseMutationEvent(previous: previous, current: current)
+    }
+
+    static func deleted(_ purchase: Purchase) -> PurchaseMutationEvent {
+        PurchaseMutationEvent(previous: purchase, current: nil)
+    }
+}
+
 struct DashboardTransaction: Identifiable, Equatable {
     let id: String
     let merchant: String
     let category: DashboardCategory
     let itemCount: Int?
     let amountMinorUnits: Int64
+    let purchase: Purchase?
+
+    init(
+        id: String,
+        merchant: String,
+        category: DashboardCategory,
+        itemCount: Int?,
+        amountMinorUnits: Int64,
+        purchase: Purchase? = nil
+    ) {
+        self.id = id
+        self.merchant = merchant
+        self.category = category
+        self.itemCount = itemCount
+        self.amountMinorUnits = amountMinorUnits
+        self.purchase = purchase
+    }
 
     var detailsText: String {
         guard let itemCount, itemCount > 0 else {
@@ -83,50 +237,139 @@ struct DashboardTransaction: Identifiable, Equatable {
     }
 }
 
-enum DashboardCategory: String, Equatable {
-    case groceries
-    case transport
-    case dining
-    case subscriptions
-    case shopping
-
-    var title: String {
+extension DashboardPeriod {
+    func interval(containing date: Date, calendar: Calendar) -> DateInterval {
         switch self {
-        case .groceries:
-            "Продукты"
-        case .transport:
-            "Транспорт"
-        case .dining:
-            "Кафе и рестораны"
-        case .subscriptions:
-            "Подписки"
-        case .shopping:
-            "Покупки"
+        case .day:
+            let start = calendar.startOfDay(for: date)
+            let end = calendar.date(byAdding: .day, value: 1, to: start) ?? date
+            return DateInterval(start: start, end: end)
+        case .month:
+            return calendar.dateInterval(of: .month, for: date) ?? DateInterval(start: date, end: date)
+        case .year:
+            return calendar.dateInterval(of: .year, for: date) ?? DateInterval(start: date, end: date)
+        }
+    }
+}
+
+struct DashboardCategory: Equatable {
+    static let groceries = DashboardCategory(name: "Продукты")
+    static let transport = DashboardCategory(name: "Транспорт")
+    static let dining = DashboardCategory(name: "Кафе")
+    static let subscriptions = DashboardCategory(name: "Подписки")
+    static let shopping = DashboardCategory(name: "Покупки")
+
+    let title: String
+    let symbolName: String
+    let tintHex: UInt32
+
+    init(name: String) {
+        let presentation = ExpenseCategoryPresentation.resolved(for: name)
+        title = presentation.name.isEmpty ? "Покупки" : presentation.name
+        symbolName = presentation.symbolName
+        tintHex = presentation.tintHex
+    }
+}
+
+@MainActor
+@Observable
+final class DashboardRecentTransactionsModel {
+    private(set) var transactions: [DashboardTransaction] = []
+    private(set) var isLoading = false
+    private(set) var failure: AppFailure?
+
+    private let repository: any PurchaseRepository
+    private let context: ExpenseContext
+    private let limit: Int
+    private var didLoad = false
+
+    init(
+        repository: any PurchaseRepository,
+        context: ExpenseContext,
+        limit: Int = 5
+    ) {
+        self.repository = repository
+        self.context = context
+        self.limit = limit
+    }
+
+    func load() async {
+        guard !didLoad, !isLoading else { return }
+        isLoading = true
+        failure = nil
+        defer { isLoading = false }
+
+        do {
+            let page = try await repository.purchasePage(in: context, after: nil, limit: limit)
+            transactions = page.purchases.map(DashboardTransaction.init(purchase:))
+            didLoad = true
+        } catch is CancellationError {
+            return
+        } catch {
+            failure = error as? AppFailure ?? .unknown
         }
     }
 
-    var symbolName: String {
-        switch self {
-        case .groceries:
-            "basket.fill"
-        case .transport:
-            "car.fill"
-        case .dining:
-            "cup.and.saucer.fill"
-        case .subscriptions:
-            "music.note"
-        case .shopping:
-            "bag.fill"
+    func retry() async {
+        didLoad = false
+        await load()
+    }
+
+    func refresh() async {
+        didLoad = false
+        await load()
+    }
+
+    func applyUpdatedPurchase(_ purchase: Purchase) {
+        guard let index = transactions.firstIndex(where: { $0.purchase?.id == purchase.id }) else { return }
+        transactions[index] = DashboardTransaction(purchase: purchase)
+    }
+
+    func removeDeletedPurchase(id: PurchaseID) {
+        transactions.removeAll { $0.purchase?.id == id }
+    }
+
+    func replenishIfNeeded() async {
+        guard transactions.count < limit, !isLoading else { return }
+        isLoading = true
+        failure = nil
+        defer { isLoading = false }
+
+        do {
+            let page = try await repository.purchasePage(in: context, after: nil, limit: limit)
+            transactions = page.purchases
+                .prefix(limit)
+                .map(DashboardTransaction.init(purchase:))
+        } catch is CancellationError {
+            return
+        } catch {
+            failure = error as? AppFailure ?? .unknown
+        }
+    }
+}
+
+extension DashboardTransaction {
+    init(purchase: Purchase) {
+        self.id = purchase.id.rawValue.uuidString
+        self.merchant = purchase.merchant
+        self.amountMinorUnits = purchase.total.minorUnits
+        self.purchase = purchase
+
+        switch purchase.kind {
+        case let .quick(category, _):
+            self.category = DashboardCategory(name: category)
+            self.itemCount = nil
+        case let .detailed(items):
+            let categories = Set(items.map(\.category))
+            let categoryName = categories.count == 1 ? (categories.first ?? "Покупки") : "Покупки"
+            self.category = DashboardCategory(name: categoryName)
+            self.itemCount = items.count
         }
     }
 }
 
 enum DashboardSamples {
     static let currentMonthLimitMinorUnits: Int64 = 10_000_000
-
-    static var currentMonthTotalMinorUnits: Int64 {
-        snapshot(for: .month).totalMinorUnits
-    }
 
     static func snapshot(for period: DashboardPeriod) -> DashboardSnapshot {
         switch period {

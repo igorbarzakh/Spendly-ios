@@ -44,6 +44,66 @@ final class AllTransactionsModelTests: XCTestCase {
         XCTAssertEqual(sections[1].title, "31 декабря 2025")
     }
 
+    func testTodaySectionUsesRelativeTitle() throws {
+        var localDateCalendar = Calendar(identifier: .gregorian)
+        localDateCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var deviceCalendar = Calendar(identifier: .gregorian)
+        deviceCalendar.timeZone = TimeZone(identifier: "Europe/Moscow")!
+        let today = try purchase(id: "11111111-1111-4111-8111-111111111111", year: 2026, month: 9, day: 8)
+
+        let sections = AllTransactionsSection.make(
+            from: [today],
+            now: deviceCalendar.date(from: DateComponents(year: 2026, month: 9, day: 8, hour: 0, minute: 40))!,
+            calendar: localDateCalendar,
+            currentCalendar: deviceCalendar
+        )
+
+        XCTAssertEqual(sections.map(\.title), ["Сегодня"])
+    }
+
+    func testAppliesUpdatedPurchaseToLoadedList() async throws {
+        let original = try purchase(id: "11111111-1111-4111-8111-111111111111", day: 8)
+        let updated = try Purchase.quick(
+            id: original.id,
+            ownerID: original.ownerID,
+            groupID: original.groupID,
+            merchant: "Updated market",
+            category: "Транспорт",
+            amount: Money(minorUnits: 9_900, currencyCode: "RUB"),
+            spentAt: original.spentAt,
+            localDate: original.localDate,
+            timeZone: original.timeZone,
+            version: original.version
+        )
+        let model = AllTransactionsModel(
+            repository: AllTransactionsRepositoryStub(pages: [
+                PurchasePage(purchases: [original], nextCursor: nil, hasMore: false)
+            ]),
+            context: .personal(original.ownerID)
+        )
+        await model.loadInitial()
+
+        model.applyUpdatedPurchase(updated)
+
+        XCTAssertEqual(model.purchases, [updated])
+    }
+
+    func testRemovesDeletedPurchaseFromLoadedList() async throws {
+        let first = try purchase(id: "11111111-1111-4111-8111-111111111111", day: 8)
+        let second = try purchase(id: "22222222-2222-4222-8222-222222222222", day: 7)
+        let model = AllTransactionsModel(
+            repository: AllTransactionsRepositoryStub(pages: [
+                PurchasePage(purchases: [first, second], nextCursor: nil, hasMore: false)
+            ]),
+            context: .personal(first.ownerID)
+        )
+        await model.loadInitial()
+
+        model.removeDeletedPurchase(id: first.id)
+
+        XCTAssertEqual(model.purchases, [second])
+    }
+
     private func purchase(
         id: String,
         year: Int = 2026,

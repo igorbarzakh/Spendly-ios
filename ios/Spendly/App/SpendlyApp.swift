@@ -44,6 +44,7 @@ private struct SpendlyRootView: View {
             case let .authenticated(session):
                 ExpensesHomeView(
                     purchaseRepository: composition.purchaseRepository,
+                    statisticsRepository: composition.statisticsRepository,
                     expenseContext: .personal(session.userID),
                     onSignOut: { Task { await model.signOut() } }
                 )

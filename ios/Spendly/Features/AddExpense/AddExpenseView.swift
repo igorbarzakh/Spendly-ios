@@ -1,9 +1,20 @@
 import SwiftUI
 import UIKit
+import Observation
 
 enum AddExpenseCategoryScope: Equatable {
     case personal
     case family
+}
+
+enum AddExpenseMode: Equatable {
+    case create
+    case edit(Purchase)
+
+    var purchase: Purchase? {
+        guard case let .edit(purchase) = self else { return nil }
+        return purchase
+    }
 }
 
 enum AddExpenseKeyboardLayout {
@@ -14,6 +25,21 @@ enum AddExpenseKeyboardLayout {
             return baseBottomPadding
         }
         return keyboardHeight + baseBottomPadding
+    }
+}
+
+@MainActor
+private enum AddExpenseFeedback {
+    static func saved() {
+        let generator = UIImpactFeedbackGenerator(style: .soft)
+        generator.prepare()
+        generator.impactOccurred(intensity: 0.6)
+    }
+
+    static func deleted() {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.prepare()
+        generator.impactOccurred(intensity: 0.75)
     }
 }
 
@@ -29,14 +55,58 @@ struct AddExpenseView: View {
     }
 
     let scope: AddExpenseCategoryScope
-    let onSave: (AddExpenseDraft) -> Void
+    let mode: AddExpenseMode
+    let onSave: (Purchase) -> Void
+    let onDelete: (PurchaseID) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var draft = AddExpenseDraft()
+    @State private var draft: AddExpenseDraft
+    @State private var model: AddExpenseModel
     @State private var isDatePickerPresented = false
     @State private var isCategoryPickerPresented = false
+    @State private var isDeleteConfirmationPresented = false
     @State private var keyboardHeight: CGFloat = 0
     @FocusState private var isMerchantFocused: Bool
+
+    init(
+        repository: any PurchaseRepository = AddExpensePreviewPurchaseRepository(),
+        context: ExpenseContext = .personal(UserID(rawValue: UUID())),
+        scope: AddExpenseCategoryScope,
+        onSave: @escaping (Purchase) -> Void = { _ in }
+    ) {
+        self.scope = scope
+        self.mode = .create
+        self.onSave = onSave
+        self.onDelete = { _ in }
+        _draft = State(initialValue: AddExpenseDraft())
+        _model = State(initialValue: AddExpenseModel(
+            repository: repository,
+            context: context,
+            saveFeedback: AddExpenseFeedback.saved,
+            deleteFeedback: AddExpenseFeedback.deleted
+        ))
+    }
+
+    init(
+        repository: any PurchaseRepository,
+        context: ExpenseContext,
+        scope: AddExpenseCategoryScope,
+        purchase: Purchase,
+        onSave: @escaping (Purchase) -> Void = { _ in },
+        onDelete: @escaping (PurchaseID) -> Void = { _ in }
+    ) {
+        self.scope = scope
+        self.mode = .edit(purchase)
+        self.onSave = onSave
+        self.onDelete = onDelete
+        _draft = State(initialValue: (try? AddExpenseDraft(purchase: purchase)) ?? AddExpenseDraft())
+        _model = State(initialValue: AddExpenseModel(
+            repository: repository,
+            context: context,
+            saveFeedback: AddExpenseFeedback.saved,
+            deleteFeedback: AddExpenseFeedback.deleted
+        ))
+    }
 
     var body: some View {
         NavigationStack {
@@ -44,9 +114,16 @@ struct AddExpenseView: View {
                 VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
                     headerSection
                         .padding(.bottom, 14)
+                    if model.failure != nil {
+                        saveFailureMessage
+                    }
                     detailsSection
 
                     amountSection
+
+                    if mode.purchase != nil {
+                        deleteButton
+                    }
                 }
                 .padding(.horizontal, Layout.horizontalPadding)
                 .padding(.top, 20)
@@ -97,6 +174,12 @@ struct AddExpenseView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 keyboardHeight = 0
             }
+            .alert("Удалить транзакцию?", isPresented: $isDeleteConfirmationPresented) {
+                Button("Отмена", role: .cancel) {}
+                Button("Удалить", role: .destructive, action: deletePurchase)
+            } message: {
+                Text("Это действие нельзя отменить.")
+            }
         }
     }
 
@@ -113,23 +196,87 @@ struct AddExpenseView: View {
 
             Spacer()
 
-            Text("Новая запись")
+            Text(mode.purchase == nil ? "Новая запись" : "Редактирование")
                 .font(.headline.weight(.bold))
                 .foregroundStyle(AppColor.black)
 
             Spacer()
 
             Button(action: save) {
-                actionCircleButton(
-                    systemName: "checkmark",
-                    iconColor: draft.canSave ? AppColor.white : AppColor.muted,
-                    fillColor: draft.canSave ? AppColor.blue : AppColor.gray,
-                    isGlassTinted: draft.canSave
-                )
+                saveActionButton
             }
             .buttonStyle(GlassCircleButtonStyle())
-            .disabled(!draft.canSave)
+            .disabled(!canSubmit || model.isBusy)
         }
+    }
+
+    private var canSubmit: Bool {
+        draft.canSubmit(comparedTo: mode.purchase)
+    }
+
+    private var saveActionButton: some View {
+        ZStack {
+            if model.isSaving {
+                Circle()
+                    .fill(AppColor.blue)
+                    .frame(width: 44, height: 44)
+                    .liquidGlassCircle()
+                    .overlay(
+                        Circle()
+                            .stroke(AppColor.blue.opacity(0.18), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.04), radius: 10, y: 3)
+
+                ProgressView()
+                    .tint(AppColor.white)
+                    .controlSize(.small)
+            } else {
+                actionCircleButton(
+                    systemName: "checkmark",
+                    iconColor: canSubmit ? AppColor.white : AppColor.muted,
+                    fillColor: canSubmit ? AppColor.blue : AppColor.gray,
+                    isGlassTinted: canSubmit
+                )
+            }
+        }
+        .frame(width: 44, height: 44)
+    }
+
+    private var saveFailureMessage: some View {
+        Text(model.failureAction == .delete
+            ? "Не удалось удалить операцию. Проверьте подключение и попробуйте ещё раз."
+            : "Не удалось сохранить операцию. Проверьте подключение и попробуйте ещё раз.")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(AppColor.dashboardSecondaryText)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .whiteSurface(cornerRadius: 14)
+    }
+
+    private var deleteButton: some View {
+        Button {
+            dismissKeyboard()
+            isDeleteConfirmationPresented = true
+        } label: {
+            HStack(spacing: 8) {
+                if model.isDeleting {
+                    ProgressView()
+                        .tint(.red)
+                } else {
+                    Image(systemName: "trash")
+                }
+
+                Text("Удалить транзакцию")
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.red)
+            .frame(maxWidth: .infinity, minHeight: Layout.fieldHeight)
+            .whiteSurface(cornerRadius: Layout.fieldCornerRadius)
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isBusy)
+        .padding(.top, 8)
     }
 
     private var amountSection: some View {
@@ -257,9 +404,31 @@ struct AddExpenseView: View {
     }
 
     private func save() {
-        guard draft.canSave else { return }
-        onSave(draft)
-        dismiss()
+        guard canSubmit, !model.isBusy else { return }
+
+        Task {
+            let savedPurchase: Purchase?
+            if let purchase = mode.purchase {
+                savedPurchase = await model.update(purchase, with: draft)
+            } else {
+                savedPurchase = await model.save(draft)
+            }
+
+            guard let savedPurchase else { return }
+
+            onSave(savedPurchase)
+            dismiss()
+        }
+    }
+
+    private func deletePurchase() {
+        guard let purchase = mode.purchase, !model.isBusy else { return }
+
+        Task {
+            guard await model.delete(purchase) else { return }
+            onDelete(purchase.id)
+            dismiss()
+        }
     }
 
     private static func keyboardHeight(from notification: Notification) -> CGFloat {
@@ -293,6 +462,106 @@ struct AddExpenseView: View {
             .contentShape(Circle())
     }
 
+}
+
+enum AddExpenseFailureAction {
+    case save
+    case delete
+}
+
+@MainActor
+@Observable
+final class AddExpenseModel {
+    private(set) var isSaving = false
+    private(set) var isDeleting = false
+    private(set) var failure: AppFailure?
+    private(set) var failureAction: AddExpenseFailureAction?
+
+    var isBusy: Bool {
+        isSaving || isDeleting
+    }
+
+    private let repository: any PurchaseRepository
+    private let context: ExpenseContext
+    private let saveFeedback: () -> Void
+    private let deleteFeedback: () -> Void
+
+    init(
+        repository: any PurchaseRepository,
+        context: ExpenseContext,
+        saveFeedback: @escaping () -> Void = {},
+        deleteFeedback: @escaping () -> Void = {}
+    ) {
+        self.repository = repository
+        self.context = context
+        self.saveFeedback = saveFeedback
+        self.deleteFeedback = deleteFeedback
+    }
+
+    func save(_ draft: AddExpenseDraft, idempotencyKey: UUID = UUID()) async -> Purchase? {
+        guard !isBusy else { return nil }
+
+        isSaving = true
+        failure = nil
+        failureAction = nil
+        defer { isSaving = false }
+
+        do {
+            let purchaseDraft = try draft.purchaseDraft(in: context)
+            let purchase = try await repository.create(purchaseDraft, idempotencyKey: idempotencyKey)
+            saveFeedback()
+            return purchase
+        } catch is CancellationError {
+            return nil
+        } catch {
+            failure = error as? AppFailure ?? .unknown
+            failureAction = .save
+            return nil
+        }
+    }
+
+    func update(_ purchase: Purchase, with draft: AddExpenseDraft) async -> Purchase? {
+        guard !isBusy, draft.canSubmit(comparedTo: purchase) else { return nil }
+
+        isSaving = true
+        failure = nil
+        failureAction = nil
+        defer { isSaving = false }
+
+        do {
+            let updatedPurchase = try draft.updatedPurchase(purchase)
+            let savedPurchase = try await repository.update(updatedPurchase, expectedVersion: purchase.version)
+            saveFeedback()
+            return savedPurchase
+        } catch is CancellationError {
+            return nil
+        } catch {
+            failure = error as? AppFailure ?? .unknown
+            failureAction = .save
+            return nil
+        }
+    }
+
+    func delete(_ purchase: Purchase) async -> Bool {
+        guard !isBusy else { return false }
+
+        isDeleting = true
+        failure = nil
+        failureAction = nil
+        defer { isDeleting = false }
+
+        do {
+            try await repository.delete(id: purchase.id, expectedVersion: purchase.version)
+            deleteFeedback()
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            failure = error as? AppFailure ?? .unknown
+            failureAction = .delete
+            return false
+        }
+    }
 }
 
 private struct CategorySelectionSheet: View {
@@ -619,8 +888,40 @@ struct AddExpenseDraft: Equatable {
     var selectedCategory: AddExpenseCategory?
     var spentAt = Date.now
 
+    init() {}
+
+    @MainActor
+    init(purchase: Purchase) throws {
+        guard case let .quick(categoryName, amount) = purchase.kind else {
+            throw AppFailure.validation(fields: [:])
+        }
+
+        amountText = Self.amountText(minorUnits: amount.minorUnits)
+        merchant = purchase.merchant
+        selectedCategory = AddExpenseCategoryStore.categories.first { $0.name == categoryName }
+            ?? AddExpenseCategory.userCreated(name: categoryName)
+        spentAt = purchase.spentAt
+    }
+
     var canSave: Bool {
         normalizedMinorUnits != nil && !merchantTrimmed.isEmpty && selectedCategory != nil
+    }
+
+    func canSubmit(comparedTo purchase: Purchase?, calendar: Calendar = .current) -> Bool {
+        guard canSave else { return false }
+        guard let purchase else { return true }
+        guard case let .quick(originalCategory, originalAmount) = purchase.kind,
+              let normalizedMinorUnits
+        else {
+            return false
+        }
+
+        let originalMerchant = purchase.merchant.trimmingCharacters(in: .whitespacesAndNewlines)
+        return merchantTrimmed != originalMerchant
+            || ExpenseCategoryPresentation.normalizedName(category)
+                != ExpenseCategoryPresentation.normalizedName(originalCategory)
+            || Int64(normalizedMinorUnits) != originalAmount.minorUnits
+            || !calendar.isDate(spentAt, inSameDayAs: purchase.spentAt)
     }
 
     var merchantTrimmed: String {
@@ -639,6 +940,86 @@ struct AddExpenseDraft: Equatable {
 
     var normalizedMinorUnits: Int? {
         MoneyFormatter.minorUnits(from: amountText)
+    }
+
+    func purchaseDraft(
+        in context: ExpenseContext,
+        calendar: Calendar = .current,
+        timeZone: TimeZone = .current
+    ) throws -> PurchaseDraft {
+        guard case let .personal(ownerID) = context,
+              let normalizedMinorUnits,
+              !merchantTrimmed.isEmpty,
+              !category.isEmpty
+        else {
+            throw AppFailure.validation(fields: [:])
+        }
+
+        let amount = try Money(minorUnits: Int64(normalizedMinorUnits), currencyCode: "RUB")
+
+        return PurchaseDraft(
+            id: PurchaseID(rawValue: UUID()),
+            ownerID: ownerID,
+            groupID: nil,
+            merchant: merchantTrimmed,
+            spentAt: spentAt,
+            localDate: Self.localDate(from: spentAt, calendar: calendar),
+            timeZone: timeZone.identifier,
+            kind: .quick(category: category, amount: amount)
+        )
+    }
+
+    func updatedPurchase(
+        _ purchase: Purchase,
+        calendar: Calendar = .current,
+        timeZone: TimeZone = .current
+    ) throws -> Purchase {
+        guard case let .quick(_, originalAmount) = purchase.kind,
+              let normalizedMinorUnits,
+              !merchantTrimmed.isEmpty,
+              !category.isEmpty
+        else {
+            throw AppFailure.validation(fields: [:])
+        }
+
+        return try Purchase.quick(
+            id: purchase.id,
+            ownerID: purchase.ownerID,
+            groupID: purchase.groupID,
+            merchant: merchantTrimmed,
+            category: category,
+            amount: Money(
+                minorUnits: Int64(normalizedMinorUnits),
+                currencyCode: originalAmount.currencyCode
+            ),
+            spentAt: spentAt,
+            localDate: Self.localDate(from: spentAt, calendar: calendar),
+            timeZone: timeZone.identifier,
+            version: purchase.version
+        )
+    }
+
+    static func localDate(from date: Date, calendar: Calendar = .current) -> Date {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return utcCalendar.date(from: components) ?? date
+    }
+
+    private static func amountText(minorUnits: Int64) -> String {
+        let majorUnits = minorUnits / 100
+        let fractionalUnits = minorUnits % 100
+        let rawValue: String
+
+        if fractionalUnits == 0 {
+            rawValue = String(majorUnits)
+        } else if fractionalUnits.isMultiple(of: 10) {
+            rawValue = "\(majorUnits),\(fractionalUnits / 10)"
+        } else {
+            rawValue = "\(majorUnits),\(String(format: "%02lld", fractionalUnits))"
+        }
+
+        return MoneyFormatter.inputText(from: rawValue)
     }
 }
 
@@ -662,24 +1043,9 @@ struct AddExpenseCategory: Identifiable, Equatable, Hashable {
     let kind: Kind
 
     var tintHex: UInt32 {
-        guard kind == .defaultCategory else { return 0x71717A }
-
-        return switch name {
-        case "Продукты": 0x238636
-        case "Транспорт": 0xF97316
-        case "Кафе": 0x8B5E3C
-        case "Развлечения": 0x7C3AED
-        case "Дом": 0xC75C3C
-        case "Здоровье": 0xD92D20
-        case "Подарки": 0xD69E00
-        case "Подписки": 0x008A83
-        case "Одежда": 0x2563EB
-        case "Счета и услуги": 0x596579
-        case "Образование": 0x4F46A5
-        case "Путешествия": 0x0891B2
-        case "Красота": 0xD63384
-        default: 0x71717A
-        }
+        guard kind == .defaultCategory else { return ExpenseCategoryPresentation.customTintHex }
+        return ExpenseCategoryPresentation.standard(matching: name)?.tintHex
+            ?? ExpenseCategoryPresentation.customTintHex
     }
 
     var tint: Color {
@@ -687,24 +1053,9 @@ struct AddExpenseCategory: Identifiable, Equatable, Hashable {
     }
 
     var symbolName: String {
-        guard kind == .defaultCategory else { return "tag.fill" }
-
-        return switch name {
-        case "Продукты": "basket.fill"
-        case "Транспорт": "car.fill"
-        case "Кафе": "cup.and.saucer.fill"
-        case "Развлечения": "theatermasks.fill"
-        case "Дом": "house.fill"
-        case "Здоровье": "heart.fill"
-        case "Подарки": "gift.fill"
-        case "Подписки": "music.note"
-        case "Одежда": "tshirt.fill"
-        case "Счета и услуги": "doc.text.fill"
-        case "Образование": "book.fill"
-        case "Путешествия": "airplane"
-        case "Красота": "sparkles"
-        default: "tag.fill"
-        }
+        guard kind == .defaultCategory else { return ExpenseCategoryPresentation.customSymbolName }
+        return ExpenseCategoryPresentation.standard(matching: name)?.symbolName
+            ?? ExpenseCategoryPresentation.customSymbolName
     }
 
     @MainActor
@@ -728,23 +1079,22 @@ struct AddExpenseCategory: Identifiable, Equatable, Hashable {
     }
 }
 
+private actor AddExpensePreviewPurchaseRepository: PurchaseRepository {
+    func purchases(in context: ExpenseContext, interval: DateInterval) async throws -> [Purchase] { [] }
+    func purchasePage(in context: ExpenseContext, after cursor: String?, limit: Int) async throws -> PurchasePage {
+        PurchasePage(purchases: [], nextCursor: nil, hasMore: false)
+    }
+    func create(_ draft: PurchaseDraft, idempotencyKey: UUID) async throws -> Purchase {
+        try RepositoryMapping.optimisticPurchase(from: draft)
+    }
+    func update(_ purchase: Purchase, expectedVersion: Int64) async throws -> Purchase { throw AppFailure.unknown }
+    func delete(id: PurchaseID, expectedVersion: Int64) async throws {}
+}
+
 @MainActor
 enum AddExpenseCategoryStore {
-    static let defaultCategories: [AddExpenseCategory] = [
-        "Продукты",
-        "Транспорт",
-        "Кафе",
-        "Развлечения",
-        "Дом",
-        "Здоровье",
-        "Подарки",
-        "Подписки",
-        "Одежда",
-        "Счета и услуги",
-        "Образование",
-        "Путешествия",
-        "Красота"
-    ].map { AddExpenseCategory.defaultCategory(name: $0) }
+    static let defaultCategories = ExpenseCategoryPresentation.standardCategories
+        .map { AddExpenseCategory.defaultCategory(name: $0.name) }
 
     private static var userCreatedCategories: [AddExpenseCategory] = []
 
@@ -780,11 +1130,7 @@ enum AddExpenseCategoryStore {
     }
 
     static func normalizedName(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "ru_RU"))
-            .lowercased()
+        ExpenseCategoryPresentation.normalizedName(value)
     }
 
     static func validatedNewCategoryName(
@@ -803,9 +1149,7 @@ enum AddExpenseCategoryStore {
     }
 
     static func displayName(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        ExpenseCategoryPresentation.displayName(value)
     }
 }
 

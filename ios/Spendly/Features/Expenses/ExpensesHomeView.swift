@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ExpensesHomeView: View {
     let purchaseRepository: any PurchaseRepository
+    let statisticsRepository: any StatisticsRepository
     let expenseContext: ExpenseContext
     let onSignOut: () -> Void
 
@@ -9,13 +10,18 @@ struct ExpensesHomeView: View {
     @State private var isAddExpensePresented = false
     @State private var isAllTransactionsPresented = false
     @State private var shouldAddExpenseAfterClosingTransactions = false
+    @State private var dashboardRefreshToken = UUID()
+    @State private var transactionToEdit: Purchase?
+    @State private var dashboardMutationEvent: PurchaseMutationEvent?
 
     init(
         purchaseRepository: any PurchaseRepository,
+        statisticsRepository: any StatisticsRepository,
         expenseContext: ExpenseContext,
         onSignOut: @escaping () -> Void = {}
     ) {
         self.purchaseRepository = purchaseRepository
+        self.statisticsRepository = statisticsRepository
         self.expenseContext = expenseContext
         self.onSignOut = onSignOut
     }
@@ -24,8 +30,17 @@ struct ExpensesHomeView: View {
         TabView(selection: $selectedTab) {
             NavigationStack {
                 DashboardView(
+                    repository: purchaseRepository,
+                    statisticsRepository: statisticsRepository,
+                    context: expenseContext,
+                    refreshToken: dashboardRefreshToken,
+                    purchaseMutationEvent: dashboardMutationEvent,
                     onAddTransaction: { isAddExpensePresented = true },
-                    onViewAllTransactions: { isAllTransactionsPresented = true }
+                    onViewAllTransactions: { isAllTransactionsPresented = true },
+                    onEditTransaction: { purchase in
+                        guard case .quick = purchase.kind else { return }
+                        transactionToEdit = purchase
+                    }
                 )
             }
             .tag(SpendlyTab.expenses)
@@ -60,9 +75,29 @@ struct ExpensesHomeView: View {
         }
         .tint(AppColor.blue)
         .sheet(isPresented: $isAddExpensePresented) {
-            AddExpenseView(scope: .personal) { _ in
+            AddExpenseView(
+                repository: purchaseRepository,
+                context: expenseContext,
+                scope: .personal
+            ) { _ in
+                dashboardRefreshToken = UUID()
                 isAddExpensePresented = false
             }
+            .presentationDetents([.large])
+        }
+        .sheet(item: $transactionToEdit) { purchase in
+            AddExpenseView(
+                repository: purchaseRepository,
+                context: expenseContext,
+                scope: .personal,
+                purchase: purchase,
+                onSave: { updatedPurchase in
+                    dashboardMutationEvent = .updated(from: purchase, to: updatedPurchase)
+                },
+                onDelete: { _ in
+                    dashboardMutationEvent = .deleted(purchase)
+                }
+            )
             .presentationDetents([.large])
         }
         .fullScreenCover(
@@ -79,6 +114,9 @@ struct ExpensesHomeView: View {
                 onAddTransaction: {
                     shouldAddExpenseAfterClosingTransactions = true
                     isAllTransactionsPresented = false
+                },
+                onTransactionsChanged: { event in
+                    dashboardMutationEvent = event
                 }
             )
         }
@@ -120,6 +158,7 @@ private enum SpendlyTab: Hashable {
 #Preview {
     ExpensesHomeView(
         purchaseRepository: PreviewPurchaseRepository(),
+        statisticsRepository: PreviewStatisticsRepository(),
         expenseContext: .personal(UserID(rawValue: UUID()))
     )
 }
@@ -132,4 +171,10 @@ private actor PreviewPurchaseRepository: PurchaseRepository {
     func create(_ draft: PurchaseDraft, idempotencyKey: UUID) async throws -> Purchase { throw AppFailure.unknown }
     func update(_ purchase: Purchase, expectedVersion: Int64) async throws -> Purchase { throw AppFailure.unknown }
     func delete(id: PurchaseID, expectedVersion: Int64) async throws {}
+}
+
+private actor PreviewStatisticsRepository: StatisticsRepository {
+    func statistics(in context: ExpenseContext, interval: DateInterval) async throws -> StatisticsSnapshot {
+        StatisticsSnapshot(totalMinor: 0, byDay: [:], byCategory: [:])
+    }
 }

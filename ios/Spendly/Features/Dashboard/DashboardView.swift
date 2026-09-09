@@ -1,22 +1,45 @@
 import SwiftUI
 
 struct DashboardView: View {
+    let refreshToken: UUID
+    let purchaseMutationEvent: PurchaseMutationEvent?
     let onAddTransaction: () -> Void
     let onViewAllTransactions: () -> Void
+    let onEditTransaction: (Purchase) -> Void
 
-    @State private var selectedPeriod: DashboardPeriod = .month
+    @State private var summaryModel: DashboardSummaryModel
+    @State private var monthlyBudgetModel: DashboardMonthlyBudgetModel
+    @State private var recentTransactionsModel: DashboardRecentTransactionsModel
+    @State private var selectedPeriod: DashboardPeriod = DashboardPeriod.defaultSelection
     @ScaledMetric(relativeTo: .largeTitle) private var amountFontSize: CGFloat = 44
 
-    private var snapshot: DashboardSnapshot {
-        DashboardSamples.snapshot(for: selectedPeriod)
-    }
-
     init(
+        repository: any PurchaseRepository = DashboardPreviewPurchaseRepository(),
+        statisticsRepository: any StatisticsRepository = DashboardPreviewStatisticsRepository(),
+        context: ExpenseContext = .personal(UserID(rawValue: UUID())),
+        refreshToken: UUID = UUID(),
+        purchaseMutationEvent: PurchaseMutationEvent? = nil,
         onAddTransaction: @escaping () -> Void = {},
-        onViewAllTransactions: @escaping () -> Void = {}
+        onViewAllTransactions: @escaping () -> Void = {},
+        onEditTransaction: @escaping (Purchase) -> Void = { _ in }
     ) {
+        _summaryModel = State(initialValue: DashboardSummaryModel(
+            repository: repository,
+            context: context
+        ))
+        _monthlyBudgetModel = State(initialValue: DashboardMonthlyBudgetModel(
+            repository: repository,
+            context: context
+        ))
+        _recentTransactionsModel = State(initialValue: DashboardRecentTransactionsModel(
+            repository: repository,
+            context: context
+        ))
+        self.refreshToken = refreshToken
+        self.purchaseMutationEvent = purchaseMutationEvent
         self.onAddTransaction = onAddTransaction
         self.onViewAllTransactions = onViewAllTransactions
+        self.onEditTransaction = onEditTransaction
     }
 
     var body: some View {
@@ -37,7 +60,32 @@ struct DashboardView: View {
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 12)
         }
+        .task(id: refreshToken) {
+            await recentTransactionsModel.refresh()
+            await summaryModel.load(period: selectedPeriod)
+        }
+        .task(id: refreshToken) {
+            await monthlyBudgetModel.load()
+        }
+        .task(id: selectedPeriod) {
+            await summaryModel.load(period: selectedPeriod)
+        }
+        .onChange(of: purchaseMutationEvent) { _, event in
+            guard let event else { return }
+
+            if let current = event.current {
+                recentTransactionsModel.applyUpdatedPurchase(current)
+                summaryModel.applyUpdate(from: event.previous, to: current, period: selectedPeriod)
+                monthlyBudgetModel.applyUpdate(from: event.previous, to: current)
+            } else {
+                recentTransactionsModel.removeDeletedPurchase(id: event.previous.id)
+                summaryModel.applyDeletion(event.previous, period: selectedPeriod)
+                monthlyBudgetModel.applyDeletion(event.previous)
+                Task { await recentTransactionsModel.replenishIfNeeded() }
+            }
+        }
         .animation(.snappy(duration: 0.28), value: selectedPeriod)
+        .animation(.snappy(duration: 0.28), value: summaryModel.totalMinorUnits)
     }
 
     private var periodPicker: some View {
@@ -53,16 +101,22 @@ struct DashboardView: View {
 
     private var summary: some View {
         VStack(spacing: 5) {
-            Text(snapshot.period.summaryTitle)
+            Text(selectedPeriod.summaryTitle)
                 .font(.subheadline)
                 .foregroundStyle(AppColor.dashboardSecondaryText)
 
-            Text(DashboardFormatting.amount(snapshot.totalMinorUnits))
+            Text(DashboardFormatting.amount(summaryModel.totalMinorUnits))
                 .font(.system(size: amountFontSize, weight: .bold, design: .rounded))
                 .foregroundStyle(AppColor.dashboardPrimaryText)
                 .minimumScaleFactor(0.65)
                 .lineLimit(1)
                 .contentTransition(.numericText())
+
+            if summaryModel.failure != nil {
+                Text("Не удалось обновить сумму")
+                    .font(.caption)
+                    .foregroundStyle(AppColor.dashboardSecondaryText)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
@@ -83,7 +137,7 @@ struct DashboardView: View {
     private var monthlyLimit: some View {
         DashboardBudgetProgressView(
             progress: DashboardBudgetProgress(
-                spentMinorUnits: DashboardSamples.currentMonthTotalMinorUnits,
+                spentMinorUnits: monthlyBudgetModel.spentMinorUnits,
                 limitMinorUnits: DashboardSamples.currentMonthLimitMinorUnits
             )
         )
@@ -124,38 +178,65 @@ struct DashboardView: View {
         .accessibilityHint("Открывает форму создания расхода")
     }
 
+    @ViewBuilder
     private var recentTransactions: some View {
-        let transactions = snapshot.recentTransactions(limit: 5)
+        let transactions = recentTransactionsModel.transactions
 
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Последние операции")
-                    .font(.headline)
-                    .foregroundStyle(AppColor.dashboardPrimaryText)
+        if !transactions.isEmpty || recentTransactionsModel.isLoading || recentTransactionsModel.failure != nil {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Последние операции")
+                        .font(.headline)
+                        .foregroundStyle(AppColor.dashboardPrimaryText)
 
-                Spacer()
+                    Spacer()
 
-                Button("Смотреть все", action: onViewAllTransactions)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(AppColor.dashboardAccent)
-            }
-            .padding(.horizontal, 4)
+                    Button("Смотреть все", action: onViewAllTransactions)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(AppColor.dashboardAccent)
+                }
+                .padding(.horizontal, 4)
 
-            LazyVStack(spacing: 0) {
-                ForEach(Array(transactions.enumerated()), id: \.element.id) { index, transaction in
-                    DashboardTransactionRow(transaction: transaction)
+                VStack(spacing: 0) {
+                    if transactions.isEmpty, recentTransactionsModel.isLoading {
+                        ProgressView()
+                            .tint(AppColor.dashboardAccent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 22)
+                    } else if transactions.isEmpty, recentTransactionsModel.failure != nil {
+                        Button("Не удалось загрузить. Повторить") {
+                            Task { await recentTransactionsModel.retry() }
+                        }
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(AppColor.dashboardAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(transactions.enumerated()), id: \.element.id) { index, transaction in
+                                Button {
+                                    guard let purchase = transaction.purchase else { return }
+                                    onEditTransaction(purchase)
+                                } label: {
+                                    DashboardTransactionRow(transaction: transaction)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(transaction.purchase == nil)
 
-                    if index < transactions.count - 1 {
-                        Divider()
-                            .overlay(AppColor.dashboardSeparator.opacity(0.45))
-                            .padding(.leading, 54)
+                                if index < transactions.count - 1 {
+                                    Divider()
+                                        .overlay(AppColor.dashboardSeparator.opacity(0.45))
+                                        .padding(.leading, 54)
+                                }
+                            }
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(AppColor.dashboardSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .dashboardCardShadow()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(AppColor.dashboardSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .dashboardCardShadow()
         }
     }
 }
@@ -197,6 +278,7 @@ private struct DashboardBudgetProgressView: View {
                     Capsule()
                         .fill(accent)
                         .frame(width: proxy.size.width * progress.fraction)
+                        .animation(.easeInOut(duration: 0.45), value: progress.fraction)
                 }
             }
             .frame(height: 7)
@@ -263,6 +345,8 @@ struct TransactionListRow: View {
                 .minimumScaleFactor(0.8)
         }
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }
@@ -279,18 +363,7 @@ private struct DashboardCardButtonStyle: ButtonStyle {
 
 private extension DashboardCategory {
     var tint: Color {
-        switch self {
-        case .groceries:
-            Color(red: 0.12, green: 0.62, blue: 0.26)
-        case .transport:
-            Color(red: 0.92, green: 0.57, blue: 0.05)
-        case .dining:
-            Color(red: 0.64, green: 0.39, blue: 0.25)
-        case .subscriptions:
-            Color(red: 0.08, green: 0.65, blue: 0.46)
-        case .shopping:
-            Color(red: 0.24, green: 0.43, blue: 0.91)
-        }
+        Color(hex: tintHex)
     }
 
     var background: Color {
@@ -306,4 +379,22 @@ private extension View {
 
 #Preview {
     DashboardView()
+}
+
+private actor DashboardPreviewPurchaseRepository: PurchaseRepository {
+    func purchases(in context: ExpenseContext, interval: DateInterval) async throws -> [Purchase] { [] }
+
+    func purchasePage(in context: ExpenseContext, after cursor: String?, limit: Int) async throws -> PurchasePage {
+        PurchasePage(purchases: [], nextCursor: nil, hasMore: false)
+    }
+
+    func create(_ draft: PurchaseDraft, idempotencyKey: UUID) async throws -> Purchase { throw AppFailure.unknown }
+    func update(_ purchase: Purchase, expectedVersion: Int64) async throws -> Purchase { throw AppFailure.unknown }
+    func delete(id: PurchaseID, expectedVersion: Int64) async throws {}
+}
+
+private actor DashboardPreviewStatisticsRepository: StatisticsRepository {
+    func statistics(in context: ExpenseContext, interval: DateInterval) async throws -> StatisticsSnapshot {
+        StatisticsSnapshot(totalMinor: 0, byDay: [:], byCategory: [:])
+    }
 }

@@ -116,7 +116,7 @@ struct PurchaseDiscount: Codable, Sendable, Hashable {
     }
 }
 
-struct Purchase: Codable, Sendable, Hashable {
+struct Purchase: Codable, Sendable, Hashable, Identifiable {
     enum ValidationError: Error, Equatable {
         case emptyMerchant
         case emptyCategory

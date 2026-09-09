@@ -15,7 +15,8 @@ struct AllTransactionsSection: Identifiable, Equatable {
     static func make(
         from purchases: [Purchase],
         now: Date = .now,
-        calendar: Calendar = localDateCalendar
+        calendar: Calendar = localDateCalendar,
+        currentCalendar: Calendar = .current
     ) -> [AllTransactionsSection] {
         let grouped = Dictionary(grouping: purchases) {
             calendar.startOfDay(for: $0.localDate)
@@ -23,7 +24,7 @@ struct AllTransactionsSection: Identifiable, Equatable {
         return grouped.keys.sorted(by: >).map { date in
             AllTransactionsSection(
                 id: date,
-                title: title(for: date, now: now, calendar: calendar),
+                title: title(for: date, now: now, calendar: calendar, currentCalendar: currentCalendar),
                 purchases: grouped[date, default: []].sorted {
                     if $0.spentAt == $1.spentAt {
                         return $0.id.rawValue.uuidString > $1.id.rawValue.uuidString
@@ -34,7 +35,12 @@ struct AllTransactionsSection: Identifiable, Equatable {
         }
     }
 
-    private static func title(for date: Date, now: Date, calendar: Calendar) -> String {
+    private static func title(for date: Date, now: Date, calendar: Calendar, currentCalendar: Calendar) -> String {
+        let today = localDate(from: now, calendar: currentCalendar)
+        if calendar.isDate(date, inSameDayAs: today) {
+            return "Сегодня"
+        }
+
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.locale = Locale(identifier: "ru_RU")
@@ -43,6 +49,11 @@ struct AllTransactionsSection: Identifiable, Equatable {
             ? "d MMMM"
             : "d MMMM yyyy"
         return formatter.string(from: date)
+    }
+
+    private static func localDate(from date: Date, calendar: Calendar) -> Date {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return localDateCalendar.date(from: components) ?? date
     }
 }
 
@@ -88,6 +99,15 @@ final class AllTransactionsModel {
         await loadPage()
     }
 
+    func applyUpdatedPurchase(_ purchase: Purchase) {
+        guard let index = purchases.firstIndex(where: { $0.id == purchase.id }) else { return }
+        purchases[index] = purchase
+    }
+
+    func removeDeletedPurchase(id: PurchaseID) {
+        purchases.removeAll { $0.id == id }
+    }
+
     private func loadPage() async {
         guard !isLoading, hasMore else { return }
         isLoading = true
@@ -116,16 +136,25 @@ final class AllTransactionsModel {
 struct AllTransactionsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: AllTransactionsModel
+    @State private var selectedPurchase: Purchase?
     private let onAddTransaction: () -> Void
+    private let onTransactionsChanged: (PurchaseMutationEvent) -> Void
 
     init(
         repository: any PurchaseRepository,
         context: ExpenseContext,
-        onAddTransaction: @escaping () -> Void = {}
+        onAddTransaction: @escaping () -> Void = {},
+        onTransactionsChanged: @escaping (PurchaseMutationEvent) -> Void = { _ in }
     ) {
         _model = State(initialValue: AllTransactionsModel(repository: repository, context: context))
         self.onAddTransaction = onAddTransaction
+        self.onTransactionsChanged = onTransactionsChanged
+        self.repository = repository
+        self.context = context
     }
+
+    private let repository: any PurchaseRepository
+    private let context: ExpenseContext
 
     var body: some View {
         NavigationStack {
@@ -138,6 +167,30 @@ struct AllTransactionsView: View {
         }
         .task {
             await model.loadInitial()
+        }
+        .sheet(item: $selectedPurchase) { purchase in
+            AddExpenseView(
+                repository: repository,
+                context: context,
+                scope: categoryScope,
+                purchase: purchase,
+                onSave: { updatedPurchase in
+                    model.applyUpdatedPurchase(updatedPurchase)
+                    onTransactionsChanged(.updated(from: purchase, to: updatedPurchase))
+                },
+                onDelete: { purchaseID in
+                    model.removeDeletedPurchase(id: purchaseID)
+                    onTransactionsChanged(.deleted(purchase))
+                }
+            )
+            .presentationDetents([.large])
+        }
+    }
+
+    private var categoryScope: AddExpenseCategoryScope {
+        switch context {
+        case .personal: .personal
+        case .group: .family
         }
     }
 
@@ -249,10 +302,17 @@ struct AllTransactionsView: View {
 
                         LazyVStack(spacing: 0) {
                             ForEach(Array(section.purchases.enumerated()), id: \.element.id) { index, purchase in
-                                PurchaseTransactionRow(purchase: purchase)
-                                    .task(id: purchase.id) {
-                                        await model.loadMoreIfNeeded(current: purchase)
-                                    }
+                                Button {
+                                    guard case .quick = purchase.kind else { return }
+                                    selectedPurchase = purchase
+                                } label: {
+                                    PurchaseTransactionRow(purchase: purchase)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!purchase.isQuick)
+                                .task(id: purchase.id) {
+                                    await model.loadMoreIfNeeded(current: purchase)
+                                }
 
                                 if index < section.purchases.count - 1 {
                                     Divider()
@@ -288,6 +348,13 @@ struct AllTransactionsView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 32)
         }
+    }
+}
+
+private extension Purchase {
+    var isQuick: Bool {
+        guard case .quick = kind else { return false }
+        return true
     }
 }
 
